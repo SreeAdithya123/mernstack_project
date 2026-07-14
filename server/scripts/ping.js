@@ -1,5 +1,6 @@
-// Phase 0 verification: ping MongoDB, Gemini (generation + embeddings), and
-// Pinecone with the configured credentials and print PASS/FAIL for each.
+// Phase 0 verification: ping MongoDB, OpenRouter (LLM), and Pinecone
+// (inference + index control plane) with the configured credentials and
+// print PASS/FAIL for each.
 import config, { missingEnv, REQUIRED_ENV } from '../src/config.js';
 
 const results = [];
@@ -13,7 +14,7 @@ async function check(name, envNames, fn) {
   try {
     results.push({ name, ok: true, detail: await fn() });
   } catch (err) {
-    results.push({ name, ok: false, detail: err.message });
+    results.push({ name, ok: false, detail: String(err.message).replace(/\s+/g, ' ').slice(0, 160) });
   }
 }
 
@@ -27,19 +28,19 @@ await check('MongoDB', REQUIRED_ENV.mongo, async () => {
   return `connected, ping ok (db: ${config.mongodbDb})`;
 });
 
-await check('Gemini generate', REQUIRED_ENV.gemini, async () => {
-  const { generateText } = await import('../src/lib/gemini.js');
+await check('OpenRouter LLM', REQUIRED_ENV.llm, async () => {
+  const { generateText } = await import('../src/lib/llm.js');
   const text = await generateText('Reply with exactly one word: PONG');
-  return `${config.geminiChatModel} replied: ${String(text).trim().slice(0, 40)}`;
+  return `${config.openrouterModel} replied: ${String(text).trim().slice(0, 40)}`;
 });
 
-await check('Gemini embeddings', REQUIRED_ENV.gemini, async () => {
-  const { embedText } = await import('../src/lib/gemini.js');
-  const vector = await embedText('connectivity test');
-  return `${config.geminiEmbedModel} returned a ${vector.length}-dim vector`;
+await check('Pinecone embeddings', REQUIRED_ENV.pinecone, async () => {
+  const { embedQuery } = await import('../src/lib/embeddings.js');
+  const vector = await embedQuery('connectivity test');
+  return `${config.embedModel} returned a ${vector.length}-dim vector`;
 });
 
-await check('Pinecone', REQUIRED_ENV.pinecone, async () => {
+await check('Pinecone index', REQUIRED_ENV.pinecone, async () => {
   const { getPinecone } = await import('../src/lib/pinecone.js');
   const { indexes = [] } = await getPinecone().listIndexes();
   const target = indexes.find((i) => i.name === config.pineconeIndex);
@@ -54,7 +55,7 @@ console.log('\nSmartSupport connectivity check');
 console.log('-'.repeat(72));
 for (const r of results) {
   if (!r.ok) allOk = false;
-  console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(18)} ${r.detail}`);
+  console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name.padEnd(20)} ${r.detail}`);
 }
 console.log('-'.repeat(72));
 console.log(allOk ? 'All services reachable.' : 'One or more services failed (see above).');

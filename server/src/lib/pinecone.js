@@ -1,5 +1,5 @@
 import { Pinecone } from '@pinecone-database/pinecone';
-import config from './config.js';
+import config from '../config.js';
 
 // One index, two namespaces: KB articles and closed-ticket resolutions stay separate.
 export const KB_NAMESPACE = 'kb-articles';

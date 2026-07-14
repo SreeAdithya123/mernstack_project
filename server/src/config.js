@@ -15,10 +15,13 @@ const config = {
   mongodbUri: process.env.MONGODB_URI,
   mongodbDb: process.env.MONGODB_DB || 'smartsupport',
 
-  geminiApiKey: process.env.GEMINI_API_KEY,
-  geminiChatModel: process.env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash',
-  geminiEmbedModel: process.env.GEMINI_EMBED_MODEL || 'gemini-embedding-001',
-  embedDimension: Number(process.env.EMBED_DIMENSION) || 768,
+  // LLM for classification / drafting / summarization: OpenRouter chat completions.
+  openrouterApiKey: process.env.OPENROUTER_API_KEY,
+  openrouterModel: process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
+
+  // Embeddings: Pinecone Inference hosted model (OpenRouter has no embeddings endpoint).
+  embedModel: process.env.EMBED_MODEL || 'llama-text-embed-v2',
+  embedDimension: Number(process.env.EMBED_DIMENSION) || 1024,
 
   pineconeApiKey: process.env.PINECONE_API_KEY,
   pineconeIndex: process.env.PINECONE_INDEX || 'smartsupport',
@@ -27,7 +30,7 @@ const config = {
 
 export const REQUIRED_ENV = {
   mongo: ['MONGODB_URI'],
-  gemini: ['GEMINI_API_KEY'],
+  llm: ['OPENROUTER_API_KEY'],
   pinecone: ['PINECONE_API_KEY'],
 };
 
