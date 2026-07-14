@@ -34,6 +34,76 @@ export function generateText(prompt, opts) {
   return chat([{ role: 'user', content: prompt }], opts);
 }
 
+// The model may emit visible reasoning around (and containing) JSON fragments,
+// so collect every balanced top-level {...} substring and use the last one
+// that parses and carries the required keys — the final answer comes last.
+function balancedObjects(text) {
+  const out = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}' && depth > 0) {
+      depth--;
+      if (depth === 0) {
+        out.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
+function extractJson(text, requiredKeys) {
+  const candidates = balancedObjects(text);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(candidates[i]);
+      if (requiredKeys.every((k) => k in parsed)) return parsed;
+    } catch {
+      // not valid JSON — keep scanning earlier candidates
+    }
+  }
+  throw new Error(`no JSON object with keys [${requiredKeys}] in model output: ${text.slice(0, 120)}`);
+}
+
+// Chat for tasks with structured output: extracts the answer JSON from the
+// model's output, runs `validate` (which may transform the value or throw),
+// and gives the model one corrective retry before giving up.
+export async function chatJson(messages, requiredKeys, { temperature = 0.2, validate = (o) => o } = {}) {
+  let raw = await chat(messages, { temperature });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return validate(extractJson(raw, requiredKeys));
+    } catch (err) {
+      if (attempt >= 1) throw new Error(`structured output failed: ${err.message}`);
+      raw = await chat(
+        [
+          ...messages,
+          { role: 'assistant', content: raw },
+          {
+            role: 'user',
+            content: `That output was invalid (${err.message.slice(0, 160)}). Reply again with ONLY the JSON object — all string values on a single line with \\n for line breaks — and nothing else.`,
+          },
+        ],
+        { temperature }
+      );
+    }
+  }
+}
+
 async function chatOpenRouter(messages, temperature) {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

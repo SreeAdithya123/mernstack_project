@@ -29,6 +29,11 @@ const config = {
   pineconeApiKey: process.env.PINECONE_API_KEY,
   pineconeIndex: process.env.PINECONE_INDEX || 'smartsupport',
   pineconeHost: process.env.PINECONE_HOST || undefined,
+
+  // Cosine score above which a past resolved ticket counts as "the same
+  // issue". Starting point 0.80 per spec; tune against real scores (Phase 5/8
+  // verification logs them).
+  similarityThreshold: Number(process.env.SIMILARITY_THRESHOLD) || 0.8,
 };
 
 export const REQUIRED_ENV = {

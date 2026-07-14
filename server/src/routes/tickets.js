@@ -2,6 +2,9 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import Ticket from '../models/Ticket.js';
 import { classifyTicket } from '../lib/triage.js';
+import { summarizeTicket } from '../lib/summarize.js';
+import { kbMatchesForTicket, similarResolvedTickets, indexResolvedTicket } from '../lib/retrieval.js';
+import { draftReply } from '../lib/draft.js';
 
 const router = Router();
 
@@ -74,10 +77,13 @@ router.post('/:id/messages', async (req, res) => {
   res.json(ticket);
 });
 
-// Update status; a resolution summary can be recorded when resolving.
+// Update status; a resolution summary can be recorded when resolving. A
+// ticket resolved with a summary is indexed into the closed-tickets namespace
+// so future tickets can surface it as a precedent.
 router.patch('/:id', async (req, res) => {
   const ticket = await findTicketOr404(req, res);
   if (!ticket) return;
+  const wasResolved = ticket.status === 'Resolved';
   if (req.body.status !== undefined) ticket.status = req.body.status;
   if (req.body.resolutionSummary !== undefined) {
     ticket.resolutionSummary = asString(req.body.resolutionSummary) || null;
@@ -88,7 +94,56 @@ router.patch('/:id', async (req, res) => {
     if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
     throw err;
   }
-  res.json(ticket);
+
+  let indexWarning;
+  if (!wasResolved && ticket.status === 'Resolved' && ticket.resolutionSummary) {
+    try {
+      await indexResolvedTicket(ticket);
+    } catch (err) {
+      indexWarning = `resolved, but indexing for similar-issue search failed: ${err.message}`;
+      console.error(`ticket ${ticket.id}: ${indexWarning}`);
+    }
+  }
+  res.json({ ...ticket.toObject(), ...(indexWarning && { indexWarning }) });
+});
+
+// Feature 2: top-3 semantically similar KB articles for this ticket.
+router.get('/:id/kb-matches', async (req, res) => {
+  const ticket = await findTicketOr404(req, res);
+  if (!ticket) return;
+  res.json(await kbMatchesForTicket(ticket));
+});
+
+// Feature 4: past resolved tickets that look like the same issue.
+router.get('/:id/similar', async (req, res) => {
+  const ticket = await findTicketOr404(req, res);
+  if (!ticket) return;
+  const result = await similarResolvedTickets(ticket);
+  console.log(
+    `similar-issue scores for ${ticket.id}: best=${result.bestScore ?? 'n/a'} threshold=${result.threshold}`
+  );
+  res.json(result);
+});
+
+// Feature 3: RAG-drafted reply grounded in the ticket's top KB matches.
+router.post('/:id/draft', async (req, res) => {
+  const ticket = await findTicketOr404(req, res);
+  if (!ticket) return;
+  const matches = await kbMatchesForTicket(ticket);
+  const reply = await draftReply(ticket, matches);
+  res.json({
+    draft: reply,
+    sources: matches.map((m) => ({ articleId: m.article._id, title: m.article.title, score: m.score })),
+  });
+});
+
+// Generate (and store) a concise handoff summary of the full thread.
+router.post('/:id/summarize', async (req, res) => {
+  const ticket = await findTicketOr404(req, res);
+  if (!ticket) return;
+  ticket.summary = await summarizeTicket(ticket);
+  await ticket.save();
+  res.json({ summary: ticket.summary, ticket });
 });
 
 export default router;
