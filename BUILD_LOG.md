@@ -10,6 +10,17 @@ When it lands, run in order: `npm run ping` → `node server/scripts/seedKB.js` 
 `node server/scripts/seedClosedTickets.js` → `node server/scripts/searchKB.js "I can't log in"` →
 re-verify Features 2–4 through the dashboard.
 
+**GitHub push (resolved 2026-07-14):** was blocked all day with "GitHub access is not enabled for
+this session. An org admin must connect the Claude GitHub App for this organization" — confirmed
+via git push, the GitHub MCP tool, `gh` CLI, and a direct curl to `api.github.com` with a
+user-supplied PAT (all four hit the identical proxy-level block, proving no credential could fix
+it). User reinstalled/reconnected the Claude GitHub App via github.com/apps/claude. First push
+succeeded immediately after: all 5 commits (`406000a`..`76ecfa1`) landed on
+`claude/sleepy-bohr-wydx06`, remote branch head verified to match local exactly. Not an issue with
+this repo or account — GitHub-side permissions were fine throughout (`gh api .../repos` briefly
+showed stale `permissions.push:false` from an unrelated cached token; the actual push is the
+authoritative check and it succeeded).
+
 ## Phase 0 — Scaffolding (done; ping 2/4 PASS, both FAILs are the Pinecone egress block)
 
 **Built:** Express 5 skeleton (`/api/health`, fail-fast env validation), config/db modules,
