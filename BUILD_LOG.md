@@ -130,7 +130,39 @@ ticket; thread renders; summary generated through the UI and is accurate; KB/sim
 surface the real backend error state. Screenshots posted in chat. Full solver verification
 (KB matches, similar tickets, draft) queued on Pinecone.
 
-## Phase 8 — End-to-end verification (pending)
+## Phase 8 — End-to-end verification (done; verified live, local machine)
 
-Blocked on the Pinecone allowlist; will re-run every verification above in one sitting once open,
-log the actual similarity scores seen, and adjust the 0.80 threshold if needed.
+**Context:** the cloud sandbox's egress allowlist blocked `api.pinecone.io` for the entire prior
+session. Continuing on the user's own Windows machine removes that constraint — no code changes
+were needed, only real credentials in `server/.env` (gitignored, not committed).
+
+**Verified (2026-07-14):**
+- `npm run ping`: all 4 checks PASS — MongoDB (Atlas), LLM (OpenRouter hit its free daily rate
+  limit; automatic Gemini fallback answered), Pinecone embeddings (1024-dim vector), Pinecone index
+  (authenticated, index "smartsupport" exists, dim 1024, cosine).
+- `node server/scripts/seedKB.js`: 12 articles, Mongo count == Pinecone `kb-articles` namespace
+  count (12 == 12).
+- `node server/scripts/seedClosedTickets.js`: 8 tickets, Mongo count == Pinecone `closed-tickets`
+  namespace count (8 == 8).
+- `node server/scripts/searchKB.js "I can't log in"`: top 3 topically correct — login
+  troubleshooting (0.4848), password reset (0.3616), app crashing (0.3035).
+- Full UI run (real ticket submitted through the form): "Stuck in a login loop after password
+  reset" classified live as High/Negative/Technical. Solver panel on the created ticket:
+  - Suggested KB articles: login troubleshooting (0.628), password reset (0.523), app slow (0.377)
+    — same relative ranking as the CLI search, confirming the live endpoint matches the script.
+  - Similar past tickets: **correctly showed no match** — "No close precedent (best score 0.568 <
+    threshold 0.8)." This is the no-false-match case the threshold was chosen to guard against;
+    0.80 holds up on a real near-but-not-quite-duplicate (login loop vs. the seeded "locked out —
+    lost phone" / "password reset email never arrives" tickets).
+  - AI draft reply: grounded in the two login-relevant KB articles, placed in the reply box.
+  - Handoff summary: accurate 3-sentence summary of the single opening message (no thread yet),
+    correctly noted no troubleshooting had been performed.
+
+**Local dev harness note:** `preview_start` (this tool's dev-server launcher) injects `PORT` into
+the whole `npm run dev` process tree to detect the server port; since this repo runs two dev
+servers (client on 5173, API on 5001) under one `concurrently` parent, that env var leaked into the
+API process too and made it bind to 5173 instead of 5001 (colliding with Vite). Not an app bug —
+worked around by starting `npm run dev` directly instead of through the launcher-injected env.
+
+**Outcome:** every item queued behind the Pinecone block is now confirmed against live services.
+The 0.80 similarity threshold needs no adjustment based on this run.
