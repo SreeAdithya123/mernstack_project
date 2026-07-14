@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import config, { missingEnv, REQUIRED_ENV } from './config.js';
 import { connectDB } from './db.js';
+import ticketsRouter from './routes/tickets.js';
 
 const missing = missingEnv(Object.values(REQUIRED_ENV).flat());
 if (missing.length) {
@@ -17,6 +18,8 @@ app.use(express.json());
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
+
+app.use('/api/tickets', ticketsRouter);
 
 // Express 5 forwards rejected async handlers here automatically.
 app.use((err, req, res, next) => {

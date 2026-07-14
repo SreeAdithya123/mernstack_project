@@ -28,10 +28,13 @@ await check('MongoDB', REQUIRED_ENV.mongo, async () => {
   return `connected, ping ok (db: ${config.mongodbDb})`;
 });
 
-await check('OpenRouter LLM', REQUIRED_ENV.llm, async () => {
-  const { generateText } = await import('../src/lib/llm.js');
-  const text = await generateText('Reply with exactly one word: PONG');
-  return `${config.openrouterModel} replied: ${String(text).trim().slice(0, 40)}`;
+await check('LLM', REQUIRED_ENV.llm, async () => {
+  const { chatDetailed } = await import('../src/lib/llm.js');
+  const { text, provider } = await chatDetailed([
+    { role: 'user', content: 'Reply with exactly one word: PONG' },
+  ]);
+  const model = provider === 'openrouter' ? config.openrouterModel : config.geminiModel;
+  return `${provider} (${model}) replied: ${String(text).trim().slice(0, 40)}`;
 });
 
 await check('Pinecone embeddings', REQUIRED_ENV.pinecone, async () => {

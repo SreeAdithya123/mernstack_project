@@ -15,9 +15,12 @@ const config = {
   mongodbUri: process.env.MONGODB_URI,
   mongodbDb: process.env.MONGODB_DB || 'smartsupport',
 
-  // LLM for classification / drafting / summarization: OpenRouter chat completions.
+  // LLM for classification / drafting / summarization: OpenRouter chat completions
+  // primary, Gemini API fallback when OpenRouter fails (quota, rate limit, blocked).
   openrouterApiKey: process.env.OPENROUTER_API_KEY,
   openrouterModel: process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  geminiModel: process.env.GEMINI_MODEL || 'gemma-4-31b-it',
 
   // Embeddings: Pinecone Inference hosted model (OpenRouter has no embeddings endpoint).
   embedModel: process.env.EMBED_MODEL || 'llama-text-embed-v2',
@@ -30,12 +33,18 @@ const config = {
 
 export const REQUIRED_ENV = {
   mongo: ['MONGODB_URI'],
-  llm: ['OPENROUTER_API_KEY'],
+  // Either LLM key satisfies the requirement; both configured means failover.
+  llm: [['OPENROUTER_API_KEY', 'GEMINI_API_KEY']],
   pinecone: ['PINECONE_API_KEY'],
 };
 
+// Each entry is an env var name (required) or an array of names (at least one required).
 export function missingEnv(names) {
-  return names.filter((name) => !process.env[name]);
+  return names
+    .filter((entry) =>
+      Array.isArray(entry) ? !entry.some((name) => process.env[name]) : !process.env[entry]
+    )
+    .map((entry) => (Array.isArray(entry) ? entry.join(' or ') : entry));
 }
 
 export default config;
