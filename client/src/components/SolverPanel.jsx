@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { tickets } from '../lib/tickets.js';
 
 function Card({ title, children }) {
   return (
@@ -15,7 +15,7 @@ const Loading = () => <p className="text-xs text-slate-400">Loading…</p>;
 
 // AI assistance sidebar: handoff summary, semantic KB matches, and
 // similar past resolved tickets for the selected ticket.
-export default function SolverPanel({ ticket, onDraft }) {
+export default function SolverPanel({ ticket, onSummaryChange, onDraft }) {
   const [kb, setKb] = useState({ state: 'loading' });
   const [similar, setSimilar] = useState({ state: 'loading' });
   const [summary, setSummary] = useState({ state: 'idle', text: ticket.summary });
@@ -27,21 +27,22 @@ export default function SolverPanel({ ticket, onDraft }) {
     setSimilar({ state: 'loading' });
     setSummary({ state: 'idle', text: ticket.summary });
     setDraftInfo(null);
-    api.kbMatches(ticket._id).then(
+    tickets.kbMatches(ticket.id).then(
       (data) => setKb({ state: 'done', data }),
       (err) => setKb({ state: 'error', error: err.message })
     );
-    api.similar(ticket._id).then(
+    tickets.similar(ticket.id).then(
       (data) => setSimilar({ state: 'done', data }),
       (err) => setSimilar({ state: 'error', error: err.message })
     );
-  }, [ticket._id]);
+  }, [ticket.id]);
 
   const generateSummary = async () => {
     setSummary({ state: 'loading', text: summary.text });
     try {
-      const { summary: text } = await api.summarize(ticket._id);
+      const { summary: text } = await tickets.summarize(ticket.id);
       setSummary({ state: 'done', text });
+      onSummaryChange?.(text);
     } catch (err) {
       setSummary({ state: 'error', text: summary.text, error: err.message });
     }
@@ -51,7 +52,7 @@ export default function SolverPanel({ ticket, onDraft }) {
     setDrafting(true);
     setDraftInfo(null);
     try {
-      const { draft, sources } = await api.draft(ticket._id);
+      const { draft, sources } = await tickets.draft(ticket.id);
       onDraft(draft);
       setDraftInfo({ sources });
     } catch (err) {
@@ -84,7 +85,7 @@ export default function SolverPanel({ ticket, onDraft }) {
           ) : (
             <ul className="space-y-2">
               {kb.data.map((m) => (
-                <li key={m.article._id}>
+                <li key={m.article.id}>
                   <details className="group">
                     <summary className="cursor-pointer text-sm text-slate-800 hover:text-indigo-700">
                       {m.article.title}
@@ -92,7 +93,7 @@ export default function SolverPanel({ ticket, onDraft }) {
                         {m.article.category} · {m.score.toFixed(3)}
                       </span>
                     </summary>
-                    <p className="mt-1 text-xs whitespace-pre-line text-slate-600">{m.article.body}</p>
+                    <p className="mt-1 text-xs whitespace-pre-line text-slate-600">{m.article.content}</p>
                   </details>
                 </li>
               ))}
@@ -114,9 +115,9 @@ export default function SolverPanel({ ticket, onDraft }) {
           ) : (
             <ul className="space-y-3">
               {similar.data.matches.map((m) => (
-                <li key={m.ticketId} className="rounded-md bg-emerald-50 p-2">
+                <li key={m.ticket_id} className="rounded-md bg-emerald-50 p-2">
                   <p className="text-sm font-medium text-emerald-900">{m.subject}</p>
-                  <p className="mt-1 text-xs text-emerald-800">{m.resolutionSummary}</p>
+                  <p className="mt-1 text-xs text-emerald-800">{m.resolution_summary}</p>
                   <p className="mt-1 text-[11px] text-emerald-600">similarity {m.score.toFixed(3)}</p>
                 </li>
               ))}

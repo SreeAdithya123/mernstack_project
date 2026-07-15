@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { useNavigate, useParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase.js';
+import { tickets } from '../lib/tickets.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { SentimentChip, PriorityChip, CategoryChip, StatusBadge } from '../components/Chips.jsx';
 import SolverPanel from '../components/SolverPanel.jsx';
 
@@ -11,14 +14,14 @@ const timeAgo = (iso) => {
 };
 
 export default function AgentDashboard() {
-  const [tickets, setTickets] = useState([]);
+  const { id: selectedId } = useParams();
+  const navigate = useNavigate();
+  const [ticketList, setTicketList] = useState([]);
   const [error, setError] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
-  const selected = tickets.find((t) => t._id === selectedId);
 
   const refresh = useCallback(async () => {
     try {
-      setTickets(await api.listTickets());
+      setTicketList(await tickets.listAll());
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -29,8 +32,8 @@ export default function AgentDashboard() {
     refresh();
   }, [refresh]);
 
-  const replaceTicket = (ticket) =>
-    setTickets((ts) => ts.map((t) => (t._id === ticket._id ? ticket : t)));
+  const replaceTicket = (updated) =>
+    setTicketList((ts) => ts.map((t) => (t.id === updated.id ? updated : t)));
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
@@ -46,12 +49,12 @@ export default function AgentDashboard() {
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <ul className="space-y-2">
-          {tickets.map((t) => (
-            <li key={t._id}>
+          {ticketList.map((t) => (
+            <li key={t.id}>
               <button
-                onClick={() => setSelectedId(t._id)}
+                onClick={() => navigate(`/agent/tickets/${t.id}`)}
                 className={`w-full rounded-lg border p-3 text-left ${
-                  t._id === selectedId
+                  t.id === selectedId
                     ? 'border-indigo-400 bg-indigo-50'
                     : 'border-slate-200 bg-white hover:border-indigo-200'
                 }`}
@@ -60,9 +63,7 @@ export default function AgentDashboard() {
                   <p className="text-sm font-medium text-slate-800">{t.subject}</p>
                   <StatusBadge value={t.status} />
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {t.submitterName} · {timeAgo(t.createdAt)}
-                </p>
+                <p className="mt-1 text-xs text-slate-500">{timeAgo(t.created_at)}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <PriorityChip value={t.priority} />
                   <SentimentChip value={t.sentiment} />
@@ -71,14 +72,12 @@ export default function AgentDashboard() {
               </button>
             </li>
           ))}
-          {tickets.length === 0 && !error && (
-            <p className="text-sm text-slate-400">No tickets yet.</p>
-          )}
+          {ticketList.length === 0 && !error && <p className="text-sm text-slate-400">No tickets yet.</p>}
         </ul>
       </aside>
 
-      {selected ? (
-        <TicketDetail key={selected._id} ticket={selected} onChange={replaceTicket} />
+      {selectedId ? (
+        <TicketDetail key={selectedId} ticketId={selectedId} onTicketChange={replaceTicket} />
       ) : (
         <div className="flex items-center justify-center rounded-lg border border-dashed border-slate-300 text-sm text-slate-400">
           Select a ticket to open the solver.
@@ -88,12 +87,50 @@ export default function AgentDashboard() {
   );
 }
 
-function TicketDetail({ ticket, onChange }) {
+function TicketDetail({ ticketId, onTicketChange }) {
+  const { user } = useAuth();
+  const [ticket, setTicket] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [reply, setReply] = useState('');
+  const [draftMessageId, setDraftMessageId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState(null);
   const [resolving, setResolving] = useState(false);
-  const [resolutionSummary, setResolutionSummary] = useState(ticket.resolutionSummary ?? '');
+  const [resolutionSummary, setResolutionSummary] = useState('');
+
+  const loadMessages = useCallback(async () => {
+    const rows = await tickets.messages(ticketId, { includeInternal: true });
+    setMessages(rows);
+    const pendingDraft = rows.find((m) => m.is_ai_draft && m.internal_only);
+    if (pendingDraft) {
+      setDraftMessageId(pendingDraft.id);
+      setReply(pendingDraft.body);
+    }
+  }, [ticketId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    tickets.get(ticketId).then((t) => {
+      if (cancelled) return;
+      setTicket(t);
+      setResolutionSummary(t.resolution_summary ?? '');
+    });
+    loadMessages();
+
+    const channel = supabase
+      .channel(`agent-ticket-messages-${ticketId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${ticketId}` },
+        () => loadMessages()
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [ticketId, loadMessages]);
 
   const act = async (fn) => {
     setBusy(true);
@@ -109,50 +146,55 @@ function TicketDetail({ ticket, onChange }) {
 
   const sendReply = () =>
     act(async () => {
-      const updated = await api.addMessage(ticket._id, { author: 'agent', text: reply });
-      onChange(updated);
+      if (draftMessageId) {
+        await tickets.sendDraft(draftMessageId, reply);
+        setDraftMessageId(null);
+      } else {
+        await tickets.reply(ticketId, user.id, reply);
+      }
       setReply('');
+      await loadMessages();
     });
 
   const setStatus = (status) =>
     act(async () => {
-      if (status === 'Resolved') {
+      if (status === 'resolved') {
         setResolving(true);
         return;
       }
-      onChange(await api.updateTicket(ticket._id, { status }));
+      const updated = await tickets.updateStatus(ticketId, { status });
+      setTicket(updated);
+      onTicketChange(updated);
     });
 
   const confirmResolve = () =>
     act(async () => {
-      const updated = await api.updateTicket(ticket._id, {
-        status: 'Resolved',
-        resolutionSummary,
-      });
-      onChange(updated);
+      const updated = await tickets.updateStatus(ticketId, { status: 'resolved', resolution_summary: resolutionSummary });
+      setTicket(updated);
+      onTicketChange(updated);
       setResolving(false);
-      if (updated.indexWarning) setActionError(updated.indexWarning);
     });
+
+  if (!ticket) return <p className="text-sm text-slate-400">Loading…</p>;
+
+  const visibleMessages = messages.filter((m) => !(m.is_ai_draft && m.internal_only));
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_minmax(300px,380px)]">
       <div className="rounded-lg border border-slate-200 bg-white">
         <header className="border-b border-slate-200 p-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">{ticket.subject}</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {ticket.submitterName} &lt;{ticket.submitterEmail}&gt;
-              </p>
-            </div>
+            <h2 className="text-lg font-semibold text-slate-900">{ticket.subject}</h2>
             <select
               value={ticket.status}
               onChange={(e) => setStatus(e.target.value)}
               disabled={busy}
               className="rounded-md border border-slate-300 px-2 py-1 text-xs"
             >
-              {['Open', 'In Progress', 'Resolved'].map((s) => (
-                <option key={s}>{s}</option>
+              {['open', 'in_progress', 'resolved'].map((s) => (
+                <option key={s} value={s}>
+                  {s.replace('_', ' ')}
+                </option>
               ))}
             </select>
           </div>
@@ -191,35 +233,41 @@ function TicketDetail({ ticket, onChange }) {
               </div>
             </div>
           )}
-          {ticket.resolutionSummary && !resolving && (
+          {ticket.resolution_summary && !resolving && (
             <p className="mt-2 rounded-md bg-green-50 p-2 text-xs text-green-900">
-              <span className="font-medium">Resolution:</span> {ticket.resolutionSummary}
+              <span className="font-medium">Resolution:</span> {ticket.resolution_summary}
             </p>
           )}
         </header>
 
         <div className="max-h-[45vh] space-y-3 overflow-y-auto p-4">
-          {ticket.messages.map((m, i) => (
-            <div key={i} className={`flex ${m.author === 'agent' ? 'justify-end' : 'justify-start'}`}>
+          {visibleMessages.map((m) => (
+            <div key={m.id} className={`flex ${m.sender_id !== ticket.customer_id ? 'justify-end' : 'justify-start'}`}>
               <div
                 className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
-                  m.author === 'agent' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'
+                  m.sender_id !== ticket.customer_id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'
                 }`}
               >
                 <p className="mb-1 text-[11px] opacity-70">
-                  {m.author === 'agent' ? 'Agent' : ticket.submitterName} · {timeAgo(m.timestamp)}
+                  {m.sender_id !== ticket.customer_id ? 'Agent' : 'Customer'} · {timeAgo(m.created_at)}
                 </p>
-                {m.text}
+                {m.body}
               </div>
             </div>
           ))}
         </div>
 
         <footer className="border-t border-slate-200 p-4">
+          {draftMessageId && (
+            <p className="mb-1.5 text-xs font-medium text-indigo-700">AI draft below — edit before sending.</p>
+          )}
           <textarea
             rows={5}
             value={reply}
-            onChange={(e) => setReply(e.target.value)}
+            onChange={(e) => {
+              setReply(e.target.value);
+              if (draftMessageId) setDraftMessageId(null);
+            }}
             placeholder="Write a reply, or let the AI draft one from the KB…"
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
           />
@@ -236,7 +284,14 @@ function TicketDetail({ ticket, onChange }) {
         </footer>
       </div>
 
-      <SolverPanel ticket={ticket} onDraft={setReply} />
+      <SolverPanel
+        ticket={ticket}
+        onSummaryChange={(summary) => setTicket((t) => ({ ...t, summary }))}
+        onDraft={(draftRow) => {
+          setDraftMessageId(draftRow.id);
+          setReply(draftRow.body);
+        }}
+      />
     </div>
   );
 }

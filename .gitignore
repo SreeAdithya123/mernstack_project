@@ -5,3 +5,6 @@ dist/
 *.log
 .DS_Store
 .localdb/
+scratchpad/
+supabase/.temp/
+supabase/.branches/

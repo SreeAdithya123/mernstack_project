@@ -166,3 +166,113 @@ worked around by starting `npm run dev` directly instead of through the launcher
 
 **Outcome:** every item queued behind the Pinecone block is now confirmed against live services.
 The 0.80 similarity threshold needs no adjustment based on this run.
+
+## Phase 9 — Migration to Supabase (Postgres + Auth + RLS + Edge Functions), Cloudflare Pages deploy
+
+**Context:** user requested a full migration off MongoDB/Mongoose/Pinecone/Express onto Supabase —
+real three-tier RBAC (`user`/`salesperson`/`admin`) enforced by RLS (not just UI), persistent
+per-message chat threads instead of an embedded array, and email notifications on ticket
+updates/replies — then a Cloudflare deployment. Target: existing Supabase project `mern_project`
+(`fhpcbqytazkayjdbmszv`, ap-southeast-2). Architecture decision: retire Express entirely — the
+client talks to Postgres directly via `supabase-js` (RLS-enforced), and every operation needing a
+secret key (LLM calls, embeddings, email) runs as a Supabase Edge Function. Cloudflare only ever
+hosts the static built frontend.
+
+**Schema + RLS (verified 2026-07-15):** `profiles`/`tickets`/`ticket_messages`/`kb_articles`
+(`embedding vector(768)`)/`ticket_embeddings` tables, `pgvector` extension, RLS policies per the
+spec's role model. Two corrections made to the user-provided spec and documented at the time: (1)
+the spec's self-referential-subquery approach to blocking role escalation was fragile — replaced
+with a `BEFORE UPDATE` trigger comparing `NEW.role IS DISTINCT FROM OLD.role` against
+`current_role() = 'admin'`; (2) the staff `ticket_messages` insert policy didn't pin
+`sender_id = auth.uid()`, letting any staff member post as another — fixed. `sender_role` is
+derived server-side from the sender's actual profile via a `BEFORE INSERT` trigger rather than
+trusted from client input, since the email-notification logic depends on it being unspoofable.
+Security-linter findings resolved: function `search_path` hardening, extensions moved out of
+`public` (`pg_net` can't be moved — accepted, not a real vulnerability), and `SECURITY DEFINER`
+helper functions explicitly revoked from `anon`/`authenticated` where they're internal-only
+(discovered mid-fix that Supabase grants `EXECUTE` directly to `anon`/`authenticated` by default,
+not just via `PUBLIC` — revoking from `PUBLIC` alone doesn't remove it).
+
+**Seed data (verified):** the 12 KB articles and 8 resolved tickets from the old
+`seedKB.js`/`seedClosedTickets.js` ported verbatim into `scripts/seed-supabase.mjs`, embedded via
+Gemini `gemini-embedding-001` (truncated to 768 dims via `outputDimensionality` — `text-embedding-004`
+isn't available on this API key). Seeded tickets need a real `profiles.id`, so one synthetic
+"historical tickets" auth user was created directly via SQL insert into `auth.users` (the normal
+signup endpoint hit its per-project email rate limit); this uncovered a real Supabase gotcha —
+raw-SQL-inserted `auth.users` rows need `''` (not `NULL`) in `confirmation_token`/`recovery_token`/etc.,
+or GoTrue's Go scanner 500s on any login attempt for that row ("converting NULL to string is
+unsupported"). Final counts verified equal on both sides: 12 KB articles, 8 tickets, 16 messages, 8
+embeddings.
+
+**Edge Functions (deployed and verified 2026-07-15):** `classify-ticket`, `kb-search`,
+`similar-tickets`, `draft-reply` (now persists the draft as an `is_ai_draft`/`internal_only`
+message row per the spec, not just returned text), `summarize-ticket`, `embed-kb-article`,
+`send-ticket-update-email` — LLM/prompt logic ported verbatim from the old `server/src/lib/*.js`.
+Secrets set via `supabase secrets set` using a user-supplied personal access token (no MCP tool
+exposes secret-setting or the project's `service_role` key directly). Real bug found and fixed:
+the `kb_articles`/`ticket_embeddings` `ivfflat` indexes (`lists = 100`) were absurdly
+over-partitioned for 12 and 8 rows respectively — confirmed via a direct RPC call that
+`match_kb_articles` returned only 1 row instead of 3 for a query whose top hit should have been an
+exact self-match. Dropped both indexes; at this row count an unindexed sequential scan is exact
+and fast. Re-verified after the fix: 3 relevant KB articles returned with sensible scores
+(0.73/0.71/0.61) for a login-loop query, matching the Phase 8 Pinecone-era results.
+
+**Email pipeline (verified live, real delivery):** the `pg_net` trigger's default 5000ms timeout
+was too short for a cold Edge Function's Gmail SMTP handshake — the first live status-change test
+timed out (`net._http_response.timed_out = true`). Fixed by passing `timeout_milliseconds := 20000`
+to both trigger functions. Re-verified: a real status change produced `{"sent":true,"to":"..."}` in
+`net._http_response`, delivered to a real inbox. Also verified the customer-reply-doesn't-email
+case by inserting a message from a genuine `user`-role sender and confirming
+`net._http_response`'s row count didn't change.
+
+**Frontend (verified live in-browser):** `@supabase/supabase-js` client, `AuthContext` (session +
+profile/role), route guards, `/login`, `/submit`, `/tickets` + `/tickets/:id` (customer, realtime
+message updates), `/agent` + `/agent/tickets/:id` (staff, URL-addressable selection unlike the old
+state-only selection), `/admin` (role management, KB CRUD, analytics). Two real bugs found and
+fixed via live testing, not just code review:
+1. Right after sign-in, `role` was briefly `undefined` (profile fetch hadn't resolved yet) —
+   `ProtectedRoute` denied the destination route and bounced back to `/`, which redirected to the
+   same destination, which denied again: an infinite render loop (`Maximum update depth exceeded`,
+   confirmed via console + a frozen renderer). Fixed by making `AuthContext`'s `loading` flag cover
+   the profile fetch, not just the session fetch, and simplified to a single `onAuthStateChange`
+   subscriber (removed a redundant parallel `getSession()` call that raced it).
+2. `Admin.jsx` used `useEffect(load, [])` where `load` returns a Promise — React rejects a
+   non-cleanup-function return from an effect and the component crashed silently (blank page, no
+   thrown error visible without checking console). Fixed both occurrences to wrap in a bare
+   arrow function.
+
+**RLS verified as the actual enforcement (not just UI), 2026-07-15:** created a second real
+customer account, obtained its JWT via the password grant, and issued direct PostgREST calls (not
+through the UI): confirmed it cannot read the first customer's ticket by ID (empty result), cannot
+read other users' profile rows, cannot self-promote its own role (blocked by the guard trigger:
+`"only admins can change a profile role"`), cannot insert a message onto another customer's ticket
+(`42501`), and cannot insert a KB article (`42501`, staff-only). All five checks behaved exactly as
+designed.
+
+**Live UI verification:** signed up a real test account (`user` role auto-assigned), submitted a
+ticket, watched live classification (High/Negative/Technical for a login-loop ticket, matching
+Phase 8). Bootstrapped that account to `admin` via one `execute_sql` UPDATE (no admin exists on a
+fresh system by design). Verified `/admin` (analytics, role dropdowns, KB CRUD), `/agent` (all
+tickets visible to staff), and the full solver panel (KB matches, similar tickets — correctly
+"no close precedent" at 0.749 < 0.80, AI draft grounded in the right articles, summary accurate).
+
+**Cleanup:** `server/` (Express/Mongoose/Pinecone) deleted — all files removed; the empty top-level
+directory itself couldn't be removed because the user's own IDE language server had it open
+(confirmed via `Get-CimInstance Win32_Process`, not one of this session's own processes — left
+alone rather than force-killing an unrelated editor process). `package.json` simplified to just
+build/serve the client. `README.md` rewritten for the new stack.
+
+**Cloudflare Pages deployment (verified live):** `wrangler` was already authenticated on this
+machine with `pages (write)` scope — no token exchange needed. Created project `smartsupport`,
+built the client (`vite build`, `_redirects` confirmed copied into `dist/`), and deployed to the
+`main` branch so it serves the project's stable root domain rather than a per-deploy/per-branch
+hash URL. Live at **https://smartsupport-b48.pages.dev**. Verified by logging in on the deployed
+site itself (not just localhost): admin login → redirect to `/admin` → analytics, role table, and
+all 12 KB articles rendered correctly with zero console errors.
+
+**Redeploy command** (after future changes): `npm run build --prefix client && npx wrangler pages
+deploy client/dist --project-name=smartsupport --branch=main`.
+
+**Outcome:** all nine phases done and verified live, including on the deployed Cloudflare URL —
+schema/RLS, seed data, six Edge Functions, full frontend rewrite, email pipeline, and the
+production deployment itself.
