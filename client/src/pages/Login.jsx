@@ -3,7 +3,8 @@ import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
-const field = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none';
+const field =
+  'w-full rounded-lg border border-cream-400 bg-cream-50 px-3 py-2 text-sm text-ink-800 focus:border-clay-500 focus:outline-none';
 
 export default function Login() {
   const { session, loading } = useAuth();
@@ -46,9 +47,9 @@ export default function Login() {
 
   if (signedUp) {
     return (
-      <div className="mx-auto max-w-sm rounded-lg border border-slate-200 bg-white p-6 text-center">
-        <h1 className="text-lg font-semibold text-green-700">Check your email</h1>
-        <p className="mt-2 text-sm text-slate-600">
+      <div className="mx-auto max-w-sm rounded-2xl border border-cream-400 bg-cream-50 p-6 text-center shadow-sm">
+        <h1 className="font-serif text-lg font-semibold text-clay-600">Check your email</h1>
+        <p className="mt-2 text-sm text-ink-600">
           We sent a confirmation link to {form.email}. Confirm it, then sign in below.
         </p>
         <button
@@ -56,7 +57,7 @@ export default function Login() {
             setSignedUp(false);
             setMode('login');
           }}
-          className="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="mt-4 rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600"
         >
           Back to sign in
         </button>
@@ -65,24 +66,26 @@ export default function Login() {
   }
 
   return (
-    <div className="mx-auto max-w-sm rounded-lg border border-slate-200 bg-white p-6">
-      <h1 className="text-xl font-semibold">{mode === 'login' ? 'Sign in' : 'Create an account'}</h1>
-      <p className="mt-1 text-sm text-slate-500">
+    <div className="mx-auto max-w-sm rounded-2xl border border-cream-400 bg-cream-50 p-6 shadow-sm">
+      <h1 className="font-serif text-xl font-semibold text-ink-900">
+        {mode === 'login' ? 'Sign in' : 'Create an account'}
+      </h1>
+      <p className="mt-1 text-sm text-ink-500">
         {mode === 'login' ? 'Access your tickets.' : 'New accounts start as a customer.'}
       </p>
       <form onSubmit={submit} className="mt-5 space-y-4">
         {mode === 'signup' && (
           <label className="block text-sm">
-            <span className="text-slate-600">Your name</span>
+            <span className="text-ink-600">Your name</span>
             <input required value={form.name} onChange={set('name')} className={`mt-1 ${field}`} />
           </label>
         )}
         <label className="block text-sm">
-          <span className="text-slate-600">Email</span>
+          <span className="text-ink-600">Email</span>
           <input required type="email" value={form.email} onChange={set('email')} className={`mt-1 ${field}`} />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-600">Password</span>
+          <span className="text-ink-600">Password</span>
           <input
             required
             type="password"
@@ -96,14 +99,14 @@ export default function Login() {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="w-full rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600 disabled:opacity-50"
         >
           {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Sign up'}
         </button>
       </form>
       <button
         onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-        className="mt-4 text-xs text-indigo-700 hover:underline"
+        className="mt-4 text-xs text-clay-600 hover:underline"
       >
         {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
       </button>

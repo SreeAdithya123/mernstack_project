@@ -7,7 +7,7 @@ const ROLES = ['user', 'salesperson', 'admin'];
 export default function Admin() {
   return (
     <div className="mx-auto max-w-4xl space-y-8">
-      <h1 className="text-lg font-semibold">Admin</h1>
+      <h1 className="font-serif text-lg font-semibold text-ink-900">Admin</h1>
       <Analytics />
       <RoleManagement />
       <KBManagement />
@@ -24,7 +24,7 @@ function Analytics() {
   }, []);
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;
-  if (!stats) return <p className="text-sm text-slate-400">Loading…</p>;
+  if (!stats) return <p className="text-sm text-ink-400">Loading…</p>;
 
   const breakdown = (obj) =>
     Object.entries(obj)
@@ -33,22 +33,22 @@ function Analytics() {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold text-slate-700">Ticket analytics</h2>
+      <h2 className="text-sm font-semibold text-ink-700">Ticket analytics</h2>
       <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <p className="font-medium">Total tickets: {stats.total}</p>
+        <div className="rounded-xl border border-cream-400 bg-cream-50 p-3 text-sm shadow-sm">
+          <p className="font-medium text-ink-800">Total tickets: {stats.total}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <p className="font-medium">By status</p>
-          <p className="text-xs text-slate-500">{breakdown(stats.byStatus)}</p>
+        <div className="rounded-xl border border-cream-400 bg-cream-50 p-3 text-sm shadow-sm">
+          <p className="font-medium text-ink-800">By status</p>
+          <p className="text-xs text-ink-500">{breakdown(stats.byStatus)}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <p className="font-medium">By sentiment</p>
-          <p className="text-xs text-slate-500">{breakdown(stats.bySentiment)}</p>
+        <div className="rounded-xl border border-cream-400 bg-cream-50 p-3 text-sm shadow-sm">
+          <p className="font-medium text-ink-800">By sentiment</p>
+          <p className="text-xs text-ink-500">{breakdown(stats.bySentiment)}</p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <p className="font-medium">By category</p>
-          <p className="text-xs text-slate-500">{breakdown(stats.byCategory)}</p>
+        <div className="rounded-xl border border-cream-400 bg-cream-50 p-3 text-sm shadow-sm">
+          <p className="font-medium text-ink-800">By category</p>
+          <p className="text-xs text-ink-500">{breakdown(stats.byCategory)}</p>
         </div>
       </div>
     </section>
@@ -80,11 +80,11 @@ function RoleManagement() {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold text-slate-700">Users &amp; roles</h2>
+      <h2 className="text-sm font-semibold text-ink-700">Users &amp; roles</h2>
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-      <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="mt-2 overflow-hidden rounded-xl border border-cream-400 bg-cream-50 shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+          <thead className="bg-cream-200 text-left text-xs text-ink-500">
             <tr>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Email</th>
@@ -94,9 +94,9 @@ function RoleManagement() {
           </thead>
           <tbody>
             {profiles.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100">
-                <td className="px-3 py-2">{p.full_name}</td>
-                <td className="px-3 py-2 text-slate-500">{p.email}</td>
+              <tr key={p.id} className="border-t border-cream-300">
+                <td className="px-3 py-2 text-ink-800">{p.full_name}</td>
+                <td className="px-3 py-2 text-ink-500">{p.email}</td>
                 <td className="px-3 py-2">
                   <RoleBadge value={p.role} />
                 </td>
@@ -105,7 +105,7 @@ function RoleManagement() {
                     value={p.role}
                     disabled={busyId === p.id}
                     onChange={(e) => changeRole(p.id, e.target.value)}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                    className="rounded-lg border border-cream-400 bg-cream-50 px-2 py-1 text-xs text-ink-700"
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>
@@ -118,7 +118,7 @@ function RoleManagement() {
             ))}
           </tbody>
         </table>
-        {profiles.length === 0 && <p className="p-3 text-xs text-slate-400">No users yet.</p>}
+        {profiles.length === 0 && <p className="p-3 text-xs text-ink-400">No users yet.</p>}
       </div>
     </section>
   );
@@ -183,23 +183,23 @@ function KBManagement() {
 
   return (
     <section>
-      <h2 className="text-sm font-semibold text-slate-700">Knowledge base articles</h2>
+      <h2 className="text-sm font-semibold text-ink-700">Knowledge base articles</h2>
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
 
-      <form onSubmit={submit} className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+      <form onSubmit={submit} className="mt-2 space-y-2 rounded-xl border border-cream-400 bg-cream-50 p-3 shadow-sm">
         <div className="grid grid-cols-2 gap-2">
           <input
             required
             placeholder="Title"
             value={form.title}
             onChange={set('title')}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="rounded-lg border border-cream-400 bg-cream-50 px-2 py-1.5 text-sm text-ink-800 focus:border-clay-500 focus:outline-none"
           />
           <input
             placeholder="Category"
             value={form.category}
             onChange={set('category')}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            className="rounded-lg border border-cream-400 bg-cream-50 px-2 py-1.5 text-sm text-ink-800 focus:border-clay-500 focus:outline-none"
           />
         </div>
         <textarea
@@ -208,18 +208,22 @@ function KBManagement() {
           placeholder="Content"
           value={form.content}
           onChange={set('content')}
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          className="w-full rounded-lg border border-cream-400 bg-cream-50 px-2 py-1.5 text-sm text-ink-800 focus:border-clay-500 focus:outline-none"
         />
         <div className="flex gap-2">
           <button
             type="submit"
             disabled={busy}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-full bg-clay-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-clay-600 disabled:opacity-50"
           >
             {editingId ? 'Save changes' : 'Add article'}
           </button>
           {editingId && (
-            <button type="button" onClick={cancelEdit} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600">
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="rounded-full border border-cream-400 px-3 py-1.5 text-xs text-ink-600"
+            >
               Cancel
             </button>
           )}
@@ -228,14 +232,14 @@ function KBManagement() {
 
       <ul className="mt-3 space-y-2">
         {articles.map((a) => (
-          <li key={a.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <li key={a.id} className="rounded-xl border border-cream-400 bg-cream-50 p-3 shadow-sm">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-sm font-medium text-slate-800">{a.title}</p>
-                <p className="text-xs text-slate-400">{a.category}</p>
+                <p className="text-sm font-medium text-ink-800">{a.title}</p>
+                <p className="text-xs text-ink-400">{a.category}</p>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => startEdit(a)} className="text-xs text-indigo-700 hover:underline">
+                <button onClick={() => startEdit(a)} className="text-xs text-clay-600 hover:underline">
                   Edit
                 </button>
                 <button onClick={() => remove(a.id)} className="text-xs text-red-600 hover:underline">
@@ -245,7 +249,7 @@ function KBManagement() {
             </div>
           </li>
         ))}
-        {articles.length === 0 && <p className="text-xs text-slate-400">No articles yet.</p>}
+        {articles.length === 0 && <p className="text-xs text-ink-400">No articles yet.</p>}
       </ul>
     </section>
   );

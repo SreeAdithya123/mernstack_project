@@ -1,1 +1,35 @@
 @import "tailwindcss";
+
+@theme {
+  /* Warm neutral scale, light mode "paper" surfaces */
+  --color-cream-50: #FAF9F5;
+  --color-cream-100: #F5F4EE;
+  --color-cream-200: #F0EFE7;
+  --color-cream-300: #E8E6DC;
+  --color-cream-400: #DDDACC;
+
+  /* Warm ink scale, for text and dark surfaces */
+  --color-ink-900: #1F1E1D;
+  --color-ink-800: #30302E;
+  --color-ink-700: #3D3929;
+  --color-ink-600: #5A5750;
+  --color-ink-500: #83827D;
+  --color-ink-400: #A8A69E;
+  --color-ink-300: #C9C7BC;
+
+  /* Signature coral/terracotta accent */
+  --color-clay-50: #FBEEE8;
+  --color-clay-100: #F5DACB;
+  --color-clay-400: #E08D68;
+  --color-clay-500: #D97757;
+  --color-clay-600: #C15F3C;
+  --color-clay-700: #A34B2C;
+
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  background-color: var(--color-cream-100);
+  color: var(--color-ink-800);
+}

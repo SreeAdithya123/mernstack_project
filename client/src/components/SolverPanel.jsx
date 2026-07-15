@@ -3,15 +3,15 @@ import { tickets } from '../lib/tickets.js';
 
 function Card({ title, children }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+    <section className="rounded-2xl border border-cream-400 bg-cream-50 p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-ink-700">{title}</h3>
       <div className="mt-2">{children}</div>
     </section>
   );
 }
 
 const ErrorNote = ({ error }) => <p className="text-xs text-red-600">{error}</p>;
-const Loading = () => <p className="text-xs text-slate-400">Loading…</p>;
+const Loading = () => <p className="text-xs text-ink-400">Loading…</p>;
 
 // AI assistance sidebar: handoff summary, semantic KB matches, and
 // similar past resolved tickets for the selected ticket.
@@ -65,12 +65,12 @@ export default function SolverPanel({ ticket, onSummaryChange, onDraft }) {
   return (
     <div className="space-y-4">
       <Card title="Handoff summary">
-        {summary.text && <p className="text-sm text-slate-700">{summary.text}</p>}
+        {summary.text && <p className="text-sm text-ink-700">{summary.text}</p>}
         {summary.state === 'error' && <ErrorNote error={summary.error} />}
         <button
           onClick={generateSummary}
           disabled={summary.state === 'loading'}
-          className="mt-2 rounded-md border border-indigo-300 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+          className="mt-2 rounded-full border border-clay-400 px-3 py-1.5 text-xs font-medium text-clay-700 hover:bg-clay-50 disabled:opacity-50"
         >
           {summary.state === 'loading' ? 'Summarizing…' : summary.text ? 'Regenerate summary' : 'Generate summary'}
         </button>
@@ -81,19 +81,19 @@ export default function SolverPanel({ ticket, onSummaryChange, onDraft }) {
         {kb.state === 'error' && <ErrorNote error={kb.error} />}
         {kb.state === 'done' &&
           (kb.data.length === 0 ? (
-            <p className="text-xs text-slate-400">No KB matches.</p>
+            <p className="text-xs text-ink-400">No KB matches.</p>
           ) : (
             <ul className="space-y-2">
               {kb.data.map((m) => (
                 <li key={m.article.id}>
                   <details className="group">
-                    <summary className="cursor-pointer text-sm text-slate-800 hover:text-indigo-700">
+                    <summary className="cursor-pointer text-sm text-ink-800 hover:text-clay-600">
                       {m.article.title}
-                      <span className="ml-2 text-xs text-slate-400">
+                      <span className="ml-2 text-xs text-ink-400">
                         {m.article.category} · {m.score.toFixed(3)}
                       </span>
                     </summary>
-                    <p className="mt-1 text-xs whitespace-pre-line text-slate-600">{m.article.content}</p>
+                    <p className="mt-1 text-xs whitespace-pre-line text-ink-600">{m.article.content}</p>
                   </details>
                 </li>
               ))}
@@ -106,7 +106,7 @@ export default function SolverPanel({ ticket, onSummaryChange, onDraft }) {
         {similar.state === 'error' && <ErrorNote error={similar.error} />}
         {similar.state === 'done' &&
           (similar.data.matches.length === 0 ? (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-ink-400">
               No close precedent
               {similar.data.bestScore != null &&
                 ` (best score ${similar.data.bestScore.toFixed(3)} < threshold ${similar.data.threshold})`}
@@ -115,7 +115,7 @@ export default function SolverPanel({ ticket, onSummaryChange, onDraft }) {
           ) : (
             <ul className="space-y-3">
               {similar.data.matches.map((m) => (
-                <li key={m.ticket_id} className="rounded-md bg-emerald-50 p-2">
+                <li key={m.ticket_id} className="rounded-lg bg-emerald-50 p-2">
                   <p className="text-sm font-medium text-emerald-900">{m.subject}</p>
                   <p className="mt-1 text-xs text-emerald-800">{m.resolution_summary}</p>
                   <p className="mt-1 text-[11px] text-emerald-600">similarity {m.score.toFixed(3)}</p>
@@ -129,13 +129,13 @@ export default function SolverPanel({ ticket, onSummaryChange, onDraft }) {
         <button
           onClick={generateDraft}
           disabled={drafting}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="rounded-full bg-clay-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-clay-600 disabled:opacity-50"
         >
           {drafting ? 'Drafting…' : 'Draft reply with AI'}
         </button>
         {draftInfo?.error && <div className="mt-2"><ErrorNote error={draftInfo.error} /></div>}
         {draftInfo?.sources && (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-ink-500">
             Draft placed in the reply box. Grounded in:{' '}
             {draftInfo.sources.map((s) => s.title).join('; ')}
           </p>

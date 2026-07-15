@@ -8,7 +8,7 @@ const label = (value) =>
 
 const SENTIMENT_STYLES = {
   positive: 'bg-green-100 text-green-800',
-  neutral: 'bg-slate-100 text-slate-700',
+  neutral: 'bg-cream-300 text-ink-600',
   negative: 'bg-amber-100 text-amber-800',
   angry: 'bg-red-100 text-red-800',
 };
@@ -16,7 +16,7 @@ const SENTIMENT_STYLES = {
 const PRIORITY_STYLES = {
   high: 'bg-red-100 text-red-800',
   medium: 'bg-amber-100 text-amber-800',
-  low: 'bg-slate-100 text-slate-700',
+  low: 'bg-cream-300 text-ink-600',
 };
 
 const STATUS_STYLES = {
@@ -31,13 +31,13 @@ export function SentimentChip({ value }) {
 }
 
 export function PriorityChip({ value }) {
-  if (!value) return <span className={`${chip} bg-slate-100 text-slate-400`}>untriaged</span>;
+  if (!value) return <span className={`${chip} bg-cream-300 text-ink-400`}>untriaged</span>;
   return <span className={`${chip} ${PRIORITY_STYLES[value] ?? ''}`}>{label(value)} priority</span>;
 }
 
 export function CategoryChip({ value }) {
   if (!value) return null;
-  return <span className={`${chip} border border-indigo-200 text-indigo-700`}>{label(value)}</span>;
+  return <span className={`${chip} border border-clay-400 text-clay-700`}>{label(value)}</span>;
 }
 
 export function StatusBadge({ value }) {
@@ -46,9 +46,9 @@ export function StatusBadge({ value }) {
 
 export function RoleBadge({ value }) {
   const styles = {
-    user: 'bg-slate-100 text-slate-700',
-    salesperson: 'bg-indigo-100 text-indigo-800',
-    admin: 'bg-purple-100 text-purple-800',
+    user: 'bg-cream-300 text-ink-600',
+    salesperson: 'bg-clay-100 text-clay-700',
+    admin: 'bg-ink-800 text-cream-50',
   };
   return <span className={`${chip} ${styles[value] ?? ''}`}>{label(value)}</span>;
 }

@@ -9,8 +9,8 @@ import AgentDashboard from './pages/AgentDashboard.jsx';
 import Admin from './pages/Admin.jsx';
 
 const navLinkClass = ({ isActive }) =>
-  `rounded-md px-3 py-1.5 text-sm font-medium ${
-    isActive ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-200'
+  `rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+    isActive ? 'bg-clay-500 text-white' : 'text-ink-600 hover:bg-cream-300'
   }`;
 
 function Home() {
@@ -27,13 +27,13 @@ export default function App() {
   const isStaff = role === 'salesperson' || role === 'admin';
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-cream-100 text-ink-800">
+      <header className="border-b border-cream-400 bg-cream-50">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" className="text-lg font-bold text-indigo-700">
+          <Link to="/" className="font-serif text-lg font-semibold text-clay-600">
             SmartSupport
           </Link>
-          <nav className="flex items-center gap-2">
+          <nav className="flex items-center gap-1.5">
             {session && !isStaff && (
               <>
                 <NavLink to="/submit" className={navLinkClass}>
@@ -55,7 +55,10 @@ export default function App() {
               </NavLink>
             )}
             {session && (
-              <button onClick={signOut} className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200">
+              <button
+                onClick={signOut}
+                className="rounded-full px-3.5 py-1.5 text-sm font-medium text-ink-600 transition-colors hover:bg-cream-300"
+              >
                 Sign out
               </button>
             )}

@@ -4,7 +4,8 @@ import { tickets } from '../lib/tickets.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { SentimentChip, PriorityChip, CategoryChip } from '../components/Chips.jsx';
 
-const field = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none';
+const field =
+  'w-full rounded-lg border border-cream-400 bg-cream-50 px-3 py-2 text-sm text-ink-800 focus:border-clay-500 focus:outline-none';
 
 export default function SubmitTicket() {
   const { user } = useAuth();
@@ -36,17 +37,17 @@ export default function SubmitTicket() {
   if (created) {
     const t = created.ticket;
     return (
-      <div className="mx-auto max-w-xl rounded-lg border border-slate-200 bg-white p-6">
-        <h1 className="text-xl font-semibold text-green-700">Ticket received</h1>
-        <p className="mt-2 text-sm text-slate-600">
+      <div className="mx-auto max-w-xl rounded-2xl border border-cream-400 bg-cream-50 p-6 shadow-sm">
+        <h1 className="font-serif text-xl font-semibold text-clay-600">Ticket received</h1>
+        <p className="mt-2 text-sm text-ink-600">
           Your ticket is in the queue. Track it any time from{' '}
-          <Link to={`/tickets/${t.id}`} className="text-indigo-700 hover:underline">
+          <Link to={`/tickets/${t.id}`} className="text-clay-600 hover:underline">
             My Tickets
           </Link>
           .
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500">Auto-triage:</span>
+          <span className="text-xs text-ink-500">Auto-triage:</span>
           <SentimentChip value={t.sentiment} />
           <PriorityChip value={t.priority} />
           <CategoryChip value={t.category} />
@@ -59,7 +60,7 @@ export default function SubmitTicket() {
             setCreated(null);
             setForm({ subject: '', message: '' });
           }}
-          className="mt-6 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="mt-6 rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600"
         >
           Submit another ticket
         </button>
@@ -68,23 +69,23 @@ export default function SubmitTicket() {
   }
 
   return (
-    <div className="mx-auto max-w-xl rounded-lg border border-slate-200 bg-white p-6">
-      <h1 className="text-xl font-semibold">Submit a ticket</h1>
-      <p className="mt-1 text-sm text-slate-500">Tell us what's wrong and we'll get on it.</p>
+    <div className="mx-auto max-w-xl rounded-2xl border border-cream-400 bg-cream-50 p-6 shadow-sm">
+      <h1 className="font-serif text-xl font-semibold text-ink-900">Submit a ticket</h1>
+      <p className="mt-1 text-sm text-ink-500">Tell us what's wrong and we'll get on it.</p>
       <form onSubmit={submit} className="mt-5 space-y-4">
         <label className="block text-sm">
-          <span className="text-slate-600">Subject</span>
+          <span className="text-ink-600">Subject</span>
           <input required value={form.subject} onChange={set('subject')} className={`mt-1 ${field}`} />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-600">What's the problem?</span>
+          <span className="text-ink-600">What's the problem?</span>
           <textarea required rows={6} value={form.message} onChange={set('message')} className={`mt-1 ${field}`} />
         </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={busy}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600 disabled:opacity-50"
         >
           {busy ? 'Submitting — AI triage takes a few seconds…' : 'Submit ticket'}
         </button>

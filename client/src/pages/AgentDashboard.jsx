@@ -39,10 +39,10 @@ export default function AgentDashboard() {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
       <aside>
         <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Tickets</h1>
+          <h1 className="font-serif text-lg font-semibold text-ink-900">Tickets</h1>
           <button
             onClick={refresh}
-            className="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100"
+            className="rounded-full border border-cream-400 px-3 py-1 text-xs text-ink-600 hover:bg-cream-200"
           >
             Refresh
           </button>
@@ -53,17 +53,17 @@ export default function AgentDashboard() {
             <li key={t.id}>
               <button
                 onClick={() => navigate(`/agent/tickets/${t.id}`)}
-                className={`w-full rounded-lg border p-3 text-left ${
+                className={`w-full rounded-xl border p-3 text-left shadow-sm transition-colors ${
                   t.id === selectedId
-                    ? 'border-indigo-400 bg-indigo-50'
-                    : 'border-slate-200 bg-white hover:border-indigo-200'
+                    ? 'border-clay-400 bg-clay-50'
+                    : 'border-cream-400 bg-cream-50 hover:border-clay-300'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-800">{t.subject}</p>
+                  <p className="text-sm font-medium text-ink-800">{t.subject}</p>
                   <StatusBadge value={t.status} />
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{timeAgo(t.created_at)}</p>
+                <p className="mt-1 text-xs text-ink-500">{timeAgo(t.created_at)}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <PriorityChip value={t.priority} />
                   <SentimentChip value={t.sentiment} />
@@ -72,14 +72,14 @@ export default function AgentDashboard() {
               </button>
             </li>
           ))}
-          {ticketList.length === 0 && !error && <p className="text-sm text-slate-400">No tickets yet.</p>}
+          {ticketList.length === 0 && !error && <p className="text-sm text-ink-400">No tickets yet.</p>}
         </ul>
       </aside>
 
       {selectedId ? (
         <TicketDetail key={selectedId} ticketId={selectedId} onTicketChange={replaceTicket} />
       ) : (
-        <div className="flex items-center justify-center rounded-lg border border-dashed border-slate-300 text-sm text-slate-400">
+        <div className="flex items-center justify-center rounded-2xl border border-dashed border-cream-400 text-sm text-ink-400">
           Select a ticket to open the solver.
         </div>
       )}
@@ -175,21 +175,21 @@ function TicketDetail({ ticketId, onTicketChange }) {
       setResolving(false);
     });
 
-  if (!ticket) return <p className="text-sm text-slate-400">Loading…</p>;
+  if (!ticket) return <p className="text-sm text-ink-400">Loading…</p>;
 
   const visibleMessages = messages.filter((m) => !(m.is_ai_draft && m.internal_only));
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_minmax(300px,380px)]">
-      <div className="rounded-lg border border-slate-200 bg-white">
-        <header className="border-b border-slate-200 p-4">
+      <div className="rounded-2xl border border-cream-400 bg-cream-50 shadow-sm">
+        <header className="border-b border-cream-300 p-4">
           <div className="flex items-start justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-900">{ticket.subject}</h2>
+            <h2 className="font-serif text-lg font-semibold text-ink-900">{ticket.subject}</h2>
             <select
               value={ticket.status}
               onChange={(e) => setStatus(e.target.value)}
               disabled={busy}
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+              className="rounded-lg border border-cream-400 bg-cream-50 px-2 py-1 text-xs text-ink-700"
             >
               {['open', 'in_progress', 'resolved'].map((s) => (
                 <option key={s} value={s}>
@@ -205,28 +205,28 @@ function TicketDetail({ ticketId, onTicketChange }) {
             <StatusBadge value={ticket.status} />
           </div>
           {resolving && (
-            <div className="mt-3 rounded-md border border-green-200 bg-green-50 p-3">
-              <p className="text-xs font-medium text-green-900">
+            <div className="mt-3 rounded-lg border border-clay-100 bg-clay-50 p-3">
+              <p className="text-xs font-medium text-clay-700">
                 Resolution summary (indexed so future similar tickets find this fix):
               </p>
               <textarea
                 rows={3}
                 value={resolutionSummary}
                 onChange={(e) => setResolutionSummary(e.target.value)}
-                className="mt-2 w-full rounded-md border border-green-300 px-2 py-1.5 text-sm"
+                className="mt-2 w-full rounded-lg border border-clay-100 bg-cream-50 px-2 py-1.5 text-sm"
                 placeholder="What was the problem and how was it fixed?"
               />
               <div className="mt-2 flex gap-2">
                 <button
                   onClick={confirmResolve}
                   disabled={busy || !resolutionSummary.trim()}
-                  className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                  className="rounded-full bg-clay-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-clay-600 disabled:opacity-50"
                 >
                   Mark resolved
                 </button>
                 <button
                   onClick={() => setResolving(false)}
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600"
+                  className="rounded-full border border-cream-400 px-3 py-1.5 text-xs text-ink-600"
                 >
                   Cancel
                 </button>
@@ -234,7 +234,7 @@ function TicketDetail({ ticketId, onTicketChange }) {
             </div>
           )}
           {ticket.resolution_summary && !resolving && (
-            <p className="mt-2 rounded-md bg-green-50 p-2 text-xs text-green-900">
+            <p className="mt-2 rounded-lg bg-clay-50 p-2 text-xs text-clay-700">
               <span className="font-medium">Resolution:</span> {ticket.resolution_summary}
             </p>
           )}
@@ -244,8 +244,8 @@ function TicketDetail({ ticketId, onTicketChange }) {
           {visibleMessages.map((m) => (
             <div key={m.id} className={`flex ${m.sender_id !== ticket.customer_id ? 'justify-end' : 'justify-start'}`}>
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
-                  m.sender_id !== ticket.customer_id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'
+                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line ${
+                  m.sender_id !== ticket.customer_id ? 'bg-clay-500 text-white' : 'bg-cream-200 text-ink-800'
                 }`}
               >
                 <p className="mb-1 text-[11px] opacity-70">
@@ -257,9 +257,9 @@ function TicketDetail({ ticketId, onTicketChange }) {
           ))}
         </div>
 
-        <footer className="border-t border-slate-200 p-4">
+        <footer className="border-t border-cream-300 p-4">
           {draftMessageId && (
-            <p className="mb-1.5 text-xs font-medium text-indigo-700">AI draft below — edit before sending.</p>
+            <p className="mb-1.5 text-xs font-medium text-clay-700">AI draft below — edit before sending.</p>
           )}
           <textarea
             rows={5}
@@ -269,14 +269,14 @@ function TicketDetail({ ticketId, onTicketChange }) {
               if (draftMessageId) setDraftMessageId(null);
             }}
             placeholder="Write a reply, or let the AI draft one from the KB…"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-lg border border-cream-400 bg-cream-50 px-3 py-2 text-sm text-ink-800 focus:border-clay-500 focus:outline-none"
           />
           {actionError && <p className="mt-1 text-xs text-red-600">{actionError}</p>}
           <div className="mt-2 flex justify-end">
             <button
               onClick={sendReply}
               disabled={busy || !reply.trim()}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600 disabled:opacity-50"
             >
               Send reply
             </button>

@@ -67,12 +67,12 @@ export default function TicketThread() {
   };
 
   if (error && !ticket) return <p className="text-sm text-red-600">{error}</p>;
-  if (!ticket) return <p className="text-sm text-slate-400">Loading…</p>;
+  if (!ticket) return <p className="text-sm text-ink-400">Loading…</p>;
 
   return (
-    <div className="mx-auto max-w-2xl rounded-lg border border-slate-200 bg-white">
-      <header className="border-b border-slate-200 p-4">
-        <h1 className="text-lg font-semibold text-slate-900">{ticket.subject}</h1>
+    <div className="mx-auto max-w-2xl rounded-2xl border border-cream-400 bg-cream-50 shadow-sm">
+      <header className="border-b border-cream-300 p-4">
+        <h1 className="font-serif text-lg font-semibold text-ink-900">{ticket.subject}</h1>
         <div className="mt-2 flex flex-wrap gap-1.5">
           <StatusBadge value={ticket.status} />
           <PriorityChip value={ticket.priority} />
@@ -80,7 +80,7 @@ export default function TicketThread() {
           <CategoryChip value={ticket.category} />
         </div>
         {ticket.resolution_summary && (
-          <p className="mt-2 rounded-md bg-green-50 p-2 text-xs text-green-900">
+          <p className="mt-2 rounded-lg bg-clay-50 p-2 text-xs text-clay-700">
             <span className="font-medium">Resolution:</span> {ticket.resolution_summary}
           </p>
         )}
@@ -90,8 +90,8 @@ export default function TicketThread() {
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
-                m.sender_id === user.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'
+              className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line ${
+                m.sender_id === user.id ? 'bg-clay-500 text-white' : 'bg-cream-200 text-ink-800'
               }`}
             >
               <p className="mb-1 text-[11px] opacity-70">
@@ -101,32 +101,32 @@ export default function TicketThread() {
             </div>
           </div>
         ))}
-        {messages.length === 0 && <p className="text-sm text-slate-400">No messages yet.</p>}
+        {messages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
       </div>
 
       {ticket.status !== 'resolved' ? (
-        <form onSubmit={sendReply} className="border-t border-slate-200 p-4">
+        <form onSubmit={sendReply} className="border-t border-cream-300 p-4">
           <textarea
             rows={3}
             required
             value={reply}
             onChange={(e) => setReply(e.target.value)}
             placeholder="Add more detail or reply to the agent…"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-lg border border-cream-400 bg-cream-50 px-3 py-2 text-sm text-ink-800 focus:border-clay-500 focus:outline-none"
           />
           {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
           <div className="mt-2 flex justify-end">
             <button
               type="submit"
               disabled={busy}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600 disabled:opacity-50"
             >
               Send
             </button>
           </div>
         </form>
       ) : (
-        <p className="border-t border-slate-200 p-4 text-xs text-slate-400">
+        <p className="border-t border-cream-300 p-4 text-xs text-ink-400">
           This ticket is resolved. Submit a new ticket if the issue comes back.
         </p>
       )}
