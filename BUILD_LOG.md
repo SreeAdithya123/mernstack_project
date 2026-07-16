@@ -276,3 +276,26 @@ deploy client/dist --project-name=smartsupport --branch=main`.
 **Outcome:** all nine phases done and verified live, including on the deployed Cloudflare URL —
 schema/RLS, seed data, six Edge Functions, full frontend rewrite, email pipeline, and the
 production deployment itself.
+
+## Phase 10 — LLM two-provider fallback exhausted; missing RLS UPDATE policy (bugs, live-verified)
+
+**LLM fallback exhausted (2026-07-16):** a real ticket failed to classify — OpenRouter primary was
+rate-limited and the Gemini fallback returned 503 ("high demand"), leaving no working provider.
+User supplied a second OpenRouter API key. Added it as a genuine third tier
+(`OPENROUTER_API_KEY_2` / `OPENROUTER_MODEL_2`, defaulting to `google/gemma-4-31b-it:free`) to
+`classify-ticket`, `draft-reply`, and `summarize-ticket` — the chain is now primary key → secondary
+key (separate account, separate free-tier quota) → Gemini. Set via `supabase secrets set`,
+redeployed, and verified live: classification succeeded on a fresh test ticket where it previously
+errored out.
+
+**Missing `ticket_messages` UPDATE policy (2026-07-16):** editing an AI draft and clicking "Send"
+failed with PostgREST's `"Cannot coerce the result to a single JSON object"`. Root cause: RLS was
+enabled on `ticket_messages` with SELECT and INSERT policies but **no UPDATE policy at all** —
+Postgres default-denies with RLS on and no matching policy, so `tickets.sendDraft`'s
+`UPDATE ... .select().single()` matched zero rows and PostgREST couldn't coerce an empty result
+into one object. Fixed with a tightly-scoped policy: staff may update a `ticket_messages` row only
+while it is *currently* `is_ai_draft = true` (finalizing a draft into a real sent message) —
+already-sent messages stay immutable/append-only per the original chat-thread design. Verified live
+via direct PostgREST calls with a real staff JWT: the send-draft UPDATE now succeeds and returns
+exactly one row, and a second attempt to edit the same (now non-draft) row correctly returns empty
+— confirming the policy is scoped as tightly as intended, not just "any staff update allowed."
