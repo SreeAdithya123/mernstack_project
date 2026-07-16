@@ -43,13 +43,11 @@ function extractJson(text: string, requiredKeys: string[]) {
   throw new Error(`no JSON object with keys [${requiredKeys}] in model output: ${text.slice(0, 120)}`);
 }
 
-async function chatOpenRouter(messages: unknown, temperature: number) {
-  const key = Deno.env.get('OPENROUTER_API_KEY');
-  if (!key) throw new Error('OPENROUTER_API_KEY not set');
+async function chatOpenRouter(messages: unknown, temperature: number, key: string, model: string) {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: Deno.env.get('OPENROUTER_MODEL') || 'google/gemma-4-31b-it:free', messages, temperature }),
+    body: JSON.stringify({ model, messages, temperature }),
   });
   const raw = await res.text();
   if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${raw.slice(0, 300)}`);
@@ -85,17 +83,33 @@ async function chatGemini(messages: Array<{ role: string; content: string }>, te
   return text;
 }
 
+// Provider chain: primary OpenRouter key/model, then a secondary OpenRouter
+// key on a free model (a separate account's free-tier quota, for when the
+// primary key is rate-limited), then Gemini as the last resort.
 async function chat(messages: Array<{ role: string; content: string }>, temperature: number) {
-  const hasOpenRouter = !!Deno.env.get('OPENROUTER_API_KEY');
-  if (hasOpenRouter) {
+  const openRouterAttempts: Array<[string, string]> = [];
+  const primaryKey = Deno.env.get('OPENROUTER_API_KEY');
+  if (primaryKey) openRouterAttempts.push([primaryKey, Deno.env.get('OPENROUTER_MODEL') || 'google/gemma-4-31b-it:free']);
+  const secondaryKey = Deno.env.get('OPENROUTER_API_KEY_2');
+  if (secondaryKey) openRouterAttempts.push([secondaryKey, Deno.env.get('OPENROUTER_MODEL_2') || 'google/gemma-4-31b-it:free']);
+
+  let lastErr: Error | undefined;
+  for (const [key, model] of openRouterAttempts) {
     try {
-      return await chatOpenRouter(messages, temperature);
+      return await chatOpenRouter(messages, temperature, key, model);
     } catch (err) {
-      if (!Deno.env.get('GEMINI_API_KEY')) throw err;
-      console.warn(`OpenRouter failed (${String((err as Error).message).slice(0, 120)}); falling back to Gemini`);
+      lastErr = err as Error;
+      console.warn(`OpenRouter (${model}) failed: ${lastErr.message.slice(0, 120)}`);
     }
   }
-  return chatGemini(messages, temperature);
+  if (Deno.env.get('GEMINI_API_KEY')) {
+    try {
+      return await chatGemini(messages, temperature);
+    } catch (err) {
+      lastErr = err as Error;
+    }
+  }
+  throw lastErr ?? new Error('no LLM provider configured');
 }
 
 async function chatJson(messages: Array<{ role: string; content: string }>, requiredKeys: string[], temperature: number, validate: (o: any) => any) {
