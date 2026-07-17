@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { tickets } from '../lib/tickets.js';
+import { tickets, drafts } from '../lib/tickets.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { SentimentChip, PriorityChip, CategoryChip } from '../components/Chips.jsx';
 import VoiceNote from '../components/VoiceNote.jsx';
@@ -15,6 +15,31 @@ export default function SubmitTicket() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [created, setCreated] = useState(null);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const saveTimer = useRef(null);
+
+  // Draft is stored server-side (keyed to the account), so it survives
+  // switching browsers or devices, not just closing this tab.
+  useEffect(() => {
+    let cancelled = false;
+    drafts.get(user.id).then((d) => {
+      if (cancelled) return;
+      if (d && (d.subject || d.message)) setForm({ subject: d.subject, message: d.message });
+      setDraftLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id]);
+
+  useEffect(() => {
+    if (!draftLoaded || created) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      drafts.save(user.id, form).catch(() => {});
+    }, 800);
+    return () => clearTimeout(saveTimer.current);
+  }, [form, draftLoaded, created, user.id]);
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
@@ -35,6 +60,7 @@ export default function SubmitTicket() {
         isVoiceTranscript: usedVoice,
       });
       setCreated({ ticket, classificationError });
+      drafts.clear(user.id).catch(() => {});
     } catch (err) {
       setError(err.message);
     } finally {

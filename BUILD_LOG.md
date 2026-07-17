@@ -383,3 +383,63 @@ instead of Gemini's inline-base64 JSON shape; the function's client-facing contr
 changes. Secret `ELEVENLABS_API_KEY` set via the Supabase CLI. Redeployed and re-verified end-to-end
 through the actual deployed function (not just the raw API) with the identical test request used
 for the Gemini version — same exact transcript.
+
+## Phase 26 — Reply-in-customer-language, auto-close low/medium tickets, persistent drafts (2026-07-17)
+
+Three fixes requested together: (1) agent replies must actually reach the customer in the
+customer's language with an English version still available to staff, (2) a ticket a customer is
+drafting shouldn't be lost when they come back from a different browser/device, (3) only
+`high`-priority tickets should need a human — everything else gets an AI reply grounded in the KB
+and is closed automatically with a grateful tone.
+
+**Real bug found while investigating (1):** the customer-facing "agent replied" email was always
+sent in English regardless of the ticket's detected language. Root cause: the old
+`ticket_messages_notify_staff_reply` trigger fired synchronously on the raw INSERT/UPDATE, before
+the async `pg_net` call to `translate-message` had a chance to populate `body_translated` — a race
+between two independent triggers on the same row event, not a translation bug. Fixed by moving
+email-sending into `translate-message` itself (`sendReplyEmail()`), which only fires the email once
+it has computed the correct customer-facing text, and dropping both old raw-INSERT/UPDATE email
+triggers via migration `016_drafts_reply_email_fix_autoresolve` to prevent double-sends. The agent
+dashboard's existing translation toggle (previously customer-messages-only) was extended to staff's
+own messages too, so an agent can see both the translated text sent to the customer and their
+original English draft.
+
+**Persistent drafts:** `ticket_drafts` table (one row per `customer_id`, RLS `customer_id =
+auth.uid()`), not localStorage — the point was surviving a switch to a different browser/device,
+not just a closed tab. `SubmitTicket.jsx` loads any existing draft on mount, autosaves on an
+800ms debounce (gated by a `draftLoaded` flag so the initial empty form state can't stomp a real
+stored draft while it's still loading), and clears the draft row on successful submit.
+
+**Auto-resolve:** new `auto-resolve-ticket` function, invoked by a new
+`tickets_auto_resolve_low_priority` trigger (`AFTER UPDATE ON tickets`, fires the moment
+`classify-ticket` sets a ticket's priority for the first time, gated to `status = 'open'` and
+`priority <> 'high'`). Grounds a warm, grateful reply in the same KB-search RAG pattern as
+`draft-reply`/`similar-tickets`, inserts it as a real (non-draft) message — which itself triggers
+`translate-message` on INSERT, so a non-English low/medium ticket gets the AI's reply translated
+and emailed through the exact same pipeline a human agent's reply goes through — then marks the
+ticket `resolved` with `auto_closed_by_ai=true` and a resolution summary. Explicitly skips if a
+human has already replied (race-safety for a fast agent) or if the ticket isn't `open` anymore.
+
+**Verified live (2026-07-17), via direct SQL-seeded test tickets + `get_logs` correlation, not just
+code review:**
+- Reply-language fix: seeded a Spanish ticket, waited for `detected_language='es'` to bootstrap,
+  inserted an English staff reply from a genuinely different admin account (to correctly trigger
+  the `isStaffReply` path) — confirmed `body_translated` was an accurate Spanish translation, and
+  confirmed via `get_logs` that `translate-message` (v3) and `send-ticket-update-email` fired
+  essentially simultaneously (4ms apart), consistent with the former calling the latter internally
+  with the translated text once available.
+- Auto-resolve, low priority: seeded an open ticket with one customer message, set `priority='low'`
+  — within ~20s the ticket flipped to `resolved`, `auto_closed_by_ai=true`, with a real reply
+  message inserted (warm tone, correctly grounded in the KB's actual refund-timing policy, no
+  invented details) and a sane one-sentence `resolution_summary`.
+- Auto-resolve, high priority (negative case): same setup but `priority='high'` — ticket correctly
+  stayed `open` with `auto_closed_by_ai=false`, confirming the trigger's priority gate holds.
+- Draft persistence: exercised the exact `save`/`get`/`clear` operations `lib/tickets.js`'s `drafts`
+  helper issues (upsert on `customer_id`, single-row select, delete) directly against the table,
+  and confirmed the `customer_id = auth.uid()` RLS policy is in place. Full round-trip through the
+  actual browser UI wasn't done in this pass (no test-account credentials available in this
+  session) — worth a manual click-through by the user.
+- Test tickets/messages created for verification were deleted afterward; no test data left behind.
+
+All three fixes deployed (`translate-message` v3, new `auto-resolve-ticket` v1) and the client
+rebuilt/redeployed to Cloudflare Pages.

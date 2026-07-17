@@ -286,7 +286,14 @@ function TicketDetail({ ticketId, onTicketChange }) {
           {visibleMessages.map((m) => {
             const isCustomer = m.sender_id === ticket.customer_id;
             const original = showOriginal.has(m.id);
-            const displayBody = isCustomer && m.body_translated && !original ? m.body_translated : m.body;
+            // Agent's dashboard always works in English by default. Customer
+            // messages: body_translated *is* the English version. Staff
+            // messages: body *is* English and body_translated is the
+            // customer-language version sent to them - so the "other"
+            // language is body_translated either way.
+            const englishText = isCustomer ? (m.body_translated ?? m.body) : m.body;
+            const otherLangText = isCustomer ? m.body : m.body_translated;
+            const displayBody = original && otherLangText ? otherLangText : englishText;
             return (
               <div key={m.id} className={`flex ${!isCustomer ? 'justify-end' : 'justify-start'}`}>
                 <div
@@ -299,13 +306,13 @@ function TicketDetail({ ticketId, onTicketChange }) {
                     {m.is_voice_transcript ? ' · 🎤 voice' : ''}
                   </p>
                   {displayBody}
-                  {isCustomer && m.body_translated && (
+                  {otherLangText && (
                     <button
                       type="button"
                       onClick={() => toggleOriginal(m.id)}
                       className="mt-1 block text-[11px] underline opacity-70 hover:opacity-100"
                     >
-                      {original ? 'Show English translation' : `Show original (${ticket.detected_language})`}
+                      {original ? 'Show English' : `Show ${ticket.detected_language} translation`}
                     </button>
                   )}
                 </div>

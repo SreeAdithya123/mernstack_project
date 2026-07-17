@@ -86,6 +86,20 @@ export const tickets = {
   transcribeVoice: (audioBase64, mimeType) => invoke('transcribe-voice-note', { audio_base64: audioBase64, mime_type: mimeType }),
 };
 
+// Keyed to the account, not browser storage - a draft survives switching
+// browsers or devices, not just a page reload.
+export const drafts = {
+  get(customerId) {
+    return supabase.from('ticket_drafts').select('*').eq('customer_id', customerId).maybeSingle().then(unwrap);
+  },
+  save(customerId, { subject, message }) {
+    return supabase.from('ticket_drafts').upsert({ customer_id: customerId, subject, message }).then(unwrap);
+  },
+  clear(customerId) {
+    return supabase.from('ticket_drafts').delete().eq('customer_id', customerId).then(unwrap);
+  },
+};
+
 function unwrap({ data, error }) {
   if (error) throw error;
   return data;

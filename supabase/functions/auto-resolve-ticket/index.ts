@@ -1,15 +1,13 @@
-// Trigger-invoked (pg_net, shared secret - no end-user JWT). Runs on every real
-// ticket_messages INSERT and on the draft-finalize UPDATE transition.
-// Bootstraps tickets.detected_language from the first non-English message seen
-// on a ticket (translating the subject at the same time), then translates each
-// subsequent message: customer -> English, staff -> the ticket's language.
-// No-ops entirely once a ticket is confirmed English.
+// Trigger-invoked (pg_net, shared secret) right after classify-ticket sets a
+// ticket's priority for the first time. Non-high-priority tickets get a
+// grounded, warm AI reply and are auto-resolved; high-priority tickets are
+// deliberately excluded here and left in the normal queue for a human agent
+// (see migration 016's trigger_auto_resolve_ticket for the exact gate).
 //
-// Also owns sending the "agent replied" customer email (moved here from a
-// raw-INSERT trigger - see migration 016): that trigger fired immediately,
-// before translation could complete, so customers were always emailed in
-// English regardless of their ticket's language. This function sends the
-// email only once it knows the correct customer-facing text.
+// The reply is inserted as a REAL message (not an internal draft), which
+// automatically triggers translate-message on INSERT - so a non-English
+// ticket gets this reply translated and emailed to the customer in their own
+// language via the same pipeline a human agent's reply goes through.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*' };
@@ -124,57 +122,34 @@ async function chatJson(messages: Array<{ role: string; content: string }>, requ
   }
 }
 
-async function detectLanguage(text: string): Promise<{ isEnglish: boolean; language: string }> {
-  return chatJson(
-    [
-      {
-        role: 'system',
-        content: `You detect the language of customer support messages. Respond with ONLY a single JSON object - no markdown fences, no commentary - in exactly this shape: {"is_english": true|false, "language": "<ISO 639-1 code>"}. Use "en" when is_english is true.`,
-      },
-      { role: 'user', content: text },
-    ],
-    ['is_english', 'language'],
-    0,
-    (parsed) => ({ isEnglish: Boolean(parsed.is_english), language: String(parsed.language).trim().toLowerCase() })
-  );
-}
-
-async function translateText(text: string, targetLanguage: string): Promise<string> {
-  return chatJson(
-    [
-      {
-        role: 'system',
-        content: `You are a precise translator for a customer support platform. Preserve tone and meaning; do not add commentary or notes. Respond with ONLY a single JSON object - no markdown fences - in exactly this shape: {"translated": "..."}`,
-      },
-      { role: 'user', content: `Translate the following text to ${targetLanguage} (if it is an ISO 639-1 code, translate to that language):\n\n${text}` },
-    ],
-    ['translated'],
-    0.2,
-    (parsed) => String(parsed.translated).trim()
-  ).then((r) => r);
-}
-
-async function sendReplyEmail(admin: any, ticketId: string, body: string) {
-  const { data: rows } = await admin
-    .from('app_settings')
-    .select('key, value')
-    .in('key', ['webhook_shared_secret', 'edge_function_base_url']);
-  const secret = rows?.find((r: any) => r.key === 'webhook_shared_secret')?.value;
-  const baseUrl = rows?.find((r: any) => r.key === 'edge_function_base_url')?.value;
-  if (!secret || !baseUrl) {
-    console.error('reply email skipped: app_settings missing webhook_shared_secret/edge_function_base_url');
-    return;
-  }
-  try {
-    await fetch(`${baseUrl}/send-ticket-update-email`, {
+async function embed(text: string): Promise<number[]> {
+  const key = Deno.env.get('GEMINI_API_KEY');
+  if (!key) throw new Error('GEMINI_API_KEY not set');
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`,
+    {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': secret },
-      body: JSON.stringify({ type: 'agent_reply', ticket_id: ticketId, body }),
-    });
-  } catch (err) {
-    console.error('reply email failed', err);
-  }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'models/gemini-embedding-001', content: { parts: [{ text }] }, outputDimensionality: 768 }),
+    }
+  );
+  if (!res.ok) throw new Error(`embed failed: ${res.status} ${await res.text()}`);
+  const body = await res.json();
+  return body.embedding.values;
 }
+
+const SYSTEM_PROMPT = `You are closing out a low- or medium-priority customer support ticket on behalf of the support team, grounded in the company's knowledge base. Write a warm, genuinely appreciative reply that:
+- Thanks the customer for reaching out.
+- Directly and helpfully addresses their message, grounding every factual claim (steps, timeframes, policies, amounts) ONLY in the provided knowledge base excerpts - never invent policies, numbers, or steps not present in them.
+- If the excerpts don't fully cover the issue, say plainly what to expect next instead of guessing, but still close warmly.
+- Ends on a genuinely positive, grateful note.
+
+Tone: warm, professional, plain language. Use they/them pronouns unless the customer stated otherwise. Keep the reply under 160 words. No placeholders like [Agent Name] - end simply with "Best regards," and a line "The Support Team".
+
+Also write a one-sentence internal resolution summary (for the ticket record only, never shown to the customer) describing what was resolved.
+
+Respond with ONLY a single JSON object - no markdown fences, no commentary, no reasoning steps - in exactly this shape, each value as one string (use \\n only if a line break is essential):
+{"reply": "...", "resolution_summary": "..."}`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -184,64 +159,77 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: corsHeaders });
     }
 
-    const { message_id } = await req.json();
-    if (!message_id) throw new Error('message_id required');
+    const { ticket_id } = await req.json();
+    if (!ticket_id) throw new Error('ticket_id required');
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-    const { data: message, error: msgErr } = await admin
-      .from('ticket_messages')
-      .select('id, ticket_id, sender_id, sender_role, body, is_ai_draft, internal_only')
-      .eq('id', message_id)
-      .single();
-    if (msgErr || !message) throw new Error('message not found');
-    if (message.is_ai_draft && message.internal_only) {
-      return new Response(JSON.stringify({ skipped: 'pending draft' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
     const { data: ticket, error: ticketErr } = await admin
       .from('tickets')
-      .select('id, subject, customer_id, detected_language')
-      .eq('id', message.ticket_id)
+      .select('id, subject, status, customer_id, priority')
+      .eq('id', ticket_id)
       .single();
     if (ticketErr || !ticket) throw new Error('ticket not found');
+    if (ticket.status !== 'open') {
+      return new Response(JSON.stringify({ skipped: `status is ${ticket.status}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (ticket.priority === 'high') {
+      return new Response(JSON.stringify({ skipped: 'high priority - human review' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
-    const isFromCustomer = message.sender_id === ticket.customer_id;
-    const isStaffReply = !isFromCustomer && (message.sender_role === 'salesperson' || message.sender_role === 'admin');
+    const { data: messages } = await admin
+      .from('ticket_messages')
+      .select('id, sender_id, sender_role, body, created_at')
+      .eq('ticket_id', ticket_id)
+      .order('created_at', { ascending: true });
 
-    let detectedLanguage = ticket.detected_language;
-    // Defaults to the original text - correct as-is for an English ticket;
-    // overwritten below with the translation for a non-English one.
-    let customerFacingText = message.body;
+    // Safety check: if a human agent has already jumped in (fast response),
+    // don't override them with an auto-reply.
+    if ((messages ?? []).some((m) => m.sender_id !== ticket.customer_id)) {
+      return new Response(JSON.stringify({ skipped: 'staff already engaged' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
-    if (detectedLanguage == null) {
-      const detection = await detectLanguage(message.body);
-      detectedLanguage = detection.isEnglish ? 'en' : detection.language;
+    const thread = (messages ?? []).map((m) => `[${m.sender_role ?? 'customer'}]\n${m.body}`).join('\n\n');
+    const firstMessage = (messages ?? [])[0]?.body ?? '';
 
-      if (detection.isEnglish) {
-        await admin.from('tickets').update({ detected_language: 'en' }).eq('id', ticket.id);
-      } else {
-        const subjectTranslated = await translateText(ticket.subject, 'English');
-        await admin.from('tickets').update({ detected_language: detectedLanguage, subject_translated: subjectTranslated }).eq('id', ticket.id);
+    const vector = await embed(`${ticket.subject}\n${firstMessage}`);
+    const { data: kbMatches, error: matchErr } = await admin.rpc('match_kb_articles', { query_embedding: vector, match_count: 3 });
+    if (matchErr) throw new Error(`KB search failed: ${matchErr.message}`);
+
+    const context = (kbMatches ?? [])
+      .map((m: any, i: number) => `--- Article ${i + 1}: ${m.title} ---\n${m.content}`)
+      .join('\n\n');
+
+    const { reply, resolutionSummary } = await chatJson(
+      [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: `Subject: ${ticket.subject}\n\nThread so far:\n${thread}\n\nRetrieved knowledge base excerpts:\n${context}` },
+      ],
+      ['reply', 'resolution_summary'],
+      0.4,
+      (parsed) => {
+        const r = String(parsed.reply).trim();
+        const s = String(parsed.resolution_summary).trim();
+        if (!r) throw new Error('reply is empty');
+        if (!s) throw new Error('resolution_summary is empty');
+        return { reply: r, resolutionSummary: s };
       }
-    }
-
-    if (detectedLanguage !== 'en') {
-      const target = isFromCustomer ? 'English' : detectedLanguage;
-      const translated = await translateText(message.body, target);
-      const { error: updateErr } = await admin.from('ticket_messages').update({ body_translated: translated }).eq('id', message.id);
-      if (updateErr) throw new Error(`failed to save translation: ${updateErr.message}`);
-      if (!isFromCustomer) customerFacingText = translated;
-    }
-
-    if (isStaffReply) {
-      await sendReplyEmail(admin, message.ticket_id, customerFacingText);
-    }
-
-    return new Response(
-      JSON.stringify({ language: detectedLanguage, translated: detectedLanguage !== 'en', emailed: isStaffReply }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
+    const { error: insertErr } = await admin
+      .from('ticket_messages')
+      .insert({ ticket_id, sender_id: null, sender_role: 'salesperson', body: reply, is_ai_draft: false, internal_only: false });
+    if (insertErr) throw new Error(`failed to insert auto-reply: ${insertErr.message}`);
+
+    const { error: updateErr } = await admin
+      .from('tickets')
+      .update({ status: 'resolved', auto_closed_by_ai: true, resolution_summary: resolutionSummary })
+      .eq('id', ticket_id);
+    if (updateErr) throw new Error(`failed to resolve ticket: ${updateErr.message}`);
+
+    return new Response(JSON.stringify({ resolved: true, resolution_summary: resolutionSummary }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: (err as Error).message }), {
