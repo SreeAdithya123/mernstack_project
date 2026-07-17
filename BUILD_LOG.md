@@ -299,3 +299,75 @@ already-sent messages stay immutable/append-only per the original chat-thread de
 via direct PostgREST calls with a real staff JWT: the send-draft UPDATE now succeeds and returns
 exactly one row, and a second attempt to edit the same (now non-draft) row correctly returns empty
 — confirming the policy is scoped as tightly as intended, not just "any staff update allowed."
+
+## Phase 11 — Multilingual support, Auto-Close Agent, Voice-to-Text
+
+**Architecture:** translation and auto-close are fully server-side and trigger-driven (DB trigger →
+`pg_net` → Edge Function, the same pattern as the email pipeline), not client-orchestrated — the
+client makes zero extra calls for either. Voice transcription stays client-invoked and synchronous
+(the user is actively waiting to review the transcript). New columns:
+`tickets.detected_language`/`subject_translated`/`auto_closed_by_ai`,
+`ticket_messages.body_translated`/`is_voice_transcript`.
+
+**translate-message** (trigger-invoked on `ticket_messages` INSERT and on the
+draft-finalize UPDATE transition): bootstraps `detected_language` + `subject_translated` from the
+first non-English message seen on a ticket, then translates each subsequent message — customer →
+English, staff → the ticket's language — into `body_translated`. No-ops entirely once a ticket is
+confirmed English.
+
+**check-auto-close** (trigger-invoked on customer `ticket_messages` INSERT, skipping the ticket's
+first message and already-resolved tickets): strict LLM classifier on the raw message body (no
+translation dependency — Gemini handles non-English input natively) decides if a follow-up is
+*purely* a closing remark. Per the user's explicit choice, this is **fully automatic** — no agent
+confirmation step — setting `status='resolved'`, `auto_closed_by_ai=true`, and an AI-written
+resolution summary, which reuses the already-verified `tickets_notify_status_change` email trigger
+with no new email code.
+
+**Bonus fix applied while adding the draft-finalize trigger:** `notify_staff_reply` only fired on
+INSERT, so an agent finalizing an AI draft via the UPDATE path (Phase 10's RLS fix) never emailed
+the customer. Added the same UPDATE trigger for it.
+
+**Real bug found and fixed while wiring the new realtime subscriptions:** the `supabase_realtime`
+publication was empty — neither `tickets` nor `ticket_messages` had ever been added to it. Prior
+"realtime" behavior in this app only *appeared* to work because each client saw its own
+locally-initiated changes (e.g. an agent's own sent reply appending to their own state), not a
+genuine cross-client push. Confirmed via `pg_publication_tables` returning zero rows. Fixed by
+adding both tables to the publication — this fixes realtime for the *existing* chat feature too,
+not just the new auto-close/translation live-updates.
+
+**transcribe-voice-note model selection (verified live against this project's key, 2026-07-17):**
+`gemini-2.0-flash` and `gemini-2.0-flash-lite` both returned 429 (quota exhausted on this key
+specifically), `gemini-2.5-flash`/`gemini-2.5-flash-lite` returned 404 ("no longer available to new
+users"). `gemini-flash-latest` works and transcribed a synthesized test clip (Windows
+`System.Speech.Synthesis`) with an exact word-for-word match. Function deployed with that model.
+
+**Verified live end-to-end (2026-07-17), via direct API calls (not just UI):**
+- Translation, both directions: a Spanish first message correctly set `detected_language='es'`,
+  translated the subject, and translated the body to English; a subsequent English staff reply
+  correctly translated to Spanish in `body_translated`.
+- Auto-close positive case: a Spanish "muchas gracias, ya pude iniciar sesión" follow-up correctly
+  flipped the ticket to resolved with `auto_closed_by_ai=true` and fired the customer email
+  (confirmed via `net._http_response`: `{"sent":true,...}`).
+- Auto-close negative case (adversarial): a follow-up starting with "Thanks for looking into
+  this" but containing genuinely new information ("it also happens on my phone") correctly did
+  *not* auto-close — the "be conservative" prompt instruction held up under a realistic near-miss,
+  not just an obvious case.
+- Voice transcription: a real synthesized audio clip sent through the deployed
+  `transcribe-voice-note` function returned an exact transcript match.
+
+**Verified live in-browser, including genuine cross-client realtime (2026-07-17):** submitted a
+ticket through the actual UI (regression check — classification still worked correctly after the
+schema/trigger changes). Then, with an agent's ticket-detail view already open and *never
+refreshed*, inserted a Spanish ticket + a Spanish "gracias, ya todo resuelto" follow-up via direct
+SQL (an external client, not the browser) — watched the open browser tab update live and
+unprompted: ticket list entry and detail header both flipped to Resolved with the "Auto-closed by
+AI" badge, the new message appeared already translated to English with a "Show original (es)"
+toggle, and the translated subject + "ES" language chip were both correct. This is the real test of
+the realtime publication fix above, not just a reload-and-check.
+
+**Outstanding:** the `VoiceNote` component's actual `MediaRecorder`/file-upload UI could not be
+exercised through this session's browser automation (no file-input upload capability in the
+available tools, and live microphone recording isn't meaningfully testable headlessly) — verified
+instead by testing the deployed transcription function directly with real audio (above) and
+confirming the component renders correctly with no console errors. Worth a manual check by the
+user with a real microphone.

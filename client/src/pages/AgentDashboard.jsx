@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { tickets } from '../lib/tickets.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { SentimentChip, PriorityChip, CategoryChip, StatusBadge } from '../components/Chips.jsx';
+import { SentimentChip, PriorityChip, CategoryChip, StatusBadge, LanguageChip, AutoClosedBadge } from '../components/Chips.jsx';
 import SolverPanel from '../components/SolverPanel.jsx';
 
 const timeAgo = (iso) => {
@@ -60,7 +60,7 @@ export default function AgentDashboard() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-ink-800">{t.subject}</p>
+                  <p className="text-sm font-medium text-ink-800">{t.subject_translated ?? t.subject}</p>
                   <StatusBadge value={t.status} />
                 </div>
                 <p className="mt-1 text-xs text-ink-500">{timeAgo(t.created_at)}</p>
@@ -68,6 +68,8 @@ export default function AgentDashboard() {
                   <PriorityChip value={t.priority} />
                   <SentimentChip value={t.sentiment} />
                   <CategoryChip value={t.category} />
+                  <LanguageChip value={t.detected_language} />
+                  <AutoClosedBadge show={t.auto_closed_by_ai} />
                 </div>
               </button>
             </li>
@@ -97,6 +99,14 @@ function TicketDetail({ ticketId, onTicketChange }) {
   const [actionError, setActionError] = useState(null);
   const [resolving, setResolving] = useState(false);
   const [resolutionSummary, setResolutionSummary] = useState('');
+  const [showOriginal, setShowOriginal] = useState(() => new Set());
+
+  const loadTicket = useCallback(async () => {
+    const t = await tickets.get(ticketId);
+    setTicket(t);
+    setResolutionSummary((prev) => prev || t.resolution_summary || '');
+    onTicketChange(t);
+  }, [ticketId, onTicketChange]);
 
   const loadMessages = useCallback(async () => {
     const rows = await tickets.messages(ticketId, { includeInternal: true });
@@ -114,15 +124,37 @@ function TicketDetail({ ticketId, onTicketChange }) {
       if (cancelled) return;
       setTicket(t);
       setResolutionSummary(t.resolution_summary ?? '');
+      onTicketChange(t);
     });
     loadMessages();
 
+    // A new message can also trigger a server-side auto-close or translation
+    // (subject_translated/detected_language), so refetch the ticket row too -
+    // this is how the agent sees an auto-close land live without polling.
     const channel = supabase
       .channel(`agent-ticket-messages-${ticketId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${ticketId}` },
+        () => {
+          loadMessages();
+          loadTicket();
+        }
+      )
+      .on(
+        // Translation (body_translated) lands as an UPDATE shortly after the
+        // triggering insert, not as part of it.
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${ticketId}` },
         () => loadMessages()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'tickets', filter: `id=eq.${ticketId}` },
+        (payload) => {
+          setTicket(payload.new);
+          onTicketChange(payload.new);
+        }
       )
       .subscribe();
 
@@ -130,7 +162,15 @@ function TicketDetail({ ticketId, onTicketChange }) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [ticketId, loadMessages]);
+  }, [ticketId, loadMessages, loadTicket]);
+
+  const toggleOriginal = (messageId) =>
+    setShowOriginal((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
 
   const act = async (fn) => {
     setBusy(true);
@@ -184,7 +224,7 @@ function TicketDetail({ ticketId, onTicketChange }) {
       <div className="rounded-2xl border border-cream-400 bg-cream-50 shadow-sm">
         <header className="border-b border-cream-300 p-4">
           <div className="flex items-start justify-between gap-3">
-            <h2 className="font-serif text-lg font-semibold text-ink-900">{ticket.subject}</h2>
+            <h2 className="font-serif text-lg font-semibold text-ink-900">{ticket.subject_translated ?? ticket.subject}</h2>
             <select
               value={ticket.status}
               onChange={(e) => setStatus(e.target.value)}
@@ -203,6 +243,8 @@ function TicketDetail({ ticketId, onTicketChange }) {
             <SentimentChip value={ticket.sentiment} />
             <CategoryChip value={ticket.category} />
             <StatusBadge value={ticket.status} />
+            <LanguageChip value={ticket.detected_language} />
+            <AutoClosedBadge show={ticket.auto_closed_by_ai} />
           </div>
           {resolving && (
             <div className="mt-3 rounded-lg border border-clay-100 bg-clay-50 p-3">
@@ -241,20 +283,35 @@ function TicketDetail({ ticketId, onTicketChange }) {
         </header>
 
         <div className="max-h-[45vh] space-y-3 overflow-y-auto p-4">
-          {visibleMessages.map((m) => (
-            <div key={m.id} className={`flex ${m.sender_id !== ticket.customer_id ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line ${
-                  m.sender_id !== ticket.customer_id ? 'bg-clay-500 text-white' : 'bg-cream-200 text-ink-800'
-                }`}
-              >
-                <p className="mb-1 text-[11px] opacity-70">
-                  {m.sender_id !== ticket.customer_id ? 'Agent' : 'Customer'} · {timeAgo(m.created_at)}
-                </p>
-                {m.body}
+          {visibleMessages.map((m) => {
+            const isCustomer = m.sender_id === ticket.customer_id;
+            const original = showOriginal.has(m.id);
+            const displayBody = isCustomer && m.body_translated && !original ? m.body_translated : m.body;
+            return (
+              <div key={m.id} className={`flex ${!isCustomer ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line ${
+                    !isCustomer ? 'bg-clay-500 text-white' : 'bg-cream-200 text-ink-800'
+                  }`}
+                >
+                  <p className="mb-1 text-[11px] opacity-70">
+                    {!isCustomer ? 'Agent' : 'Customer'} · {timeAgo(m.created_at)}
+                    {m.is_voice_transcript ? ' · 🎤 voice' : ''}
+                  </p>
+                  {displayBody}
+                  {isCustomer && m.body_translated && (
+                    <button
+                      type="button"
+                      onClick={() => toggleOriginal(m.id)}
+                      className="mt-1 block text-[11px] underline opacity-70 hover:opacity-100"
+                    >
+                      {original ? 'Show English translation' : `Show original (${ticket.detected_language})`}
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <footer className="border-t border-cream-300 p-4">

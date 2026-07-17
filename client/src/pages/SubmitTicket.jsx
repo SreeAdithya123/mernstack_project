@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { tickets } from '../lib/tickets.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { SentimentChip, PriorityChip, CategoryChip } from '../components/Chips.jsx';
+import VoiceNote from '../components/VoiceNote.jsx';
 
 const field =
   'w-full rounded-lg border border-cream-400 bg-cream-50 px-3 py-2 text-sm text-ink-800 focus:border-clay-500 focus:outline-none';
@@ -10,11 +11,17 @@ const field =
 export default function SubmitTicket() {
   const { user } = useAuth();
   const [form, setForm] = useState({ subject: '', message: '' });
+  const [usedVoice, setUsedVoice] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [created, setCreated] = useState(null);
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+
+  const onTranscript = (text) => {
+    setUsedVoice(true);
+    setForm((f) => ({ ...f, message: f.message ? `${f.message}\n\n${text}` : text }));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -25,6 +32,7 @@ export default function SubmitTicket() {
         customerId: user.id,
         subject: form.subject,
         message: form.message,
+        isVoiceTranscript: usedVoice,
       });
       setCreated({ ticket, classificationError });
     } catch (err) {
@@ -59,6 +67,7 @@ export default function SubmitTicket() {
           onClick={() => {
             setCreated(null);
             setForm({ subject: '', message: '' });
+            setUsedVoice(false);
           }}
           className="mt-6 rounded-full bg-clay-500 px-4 py-2 text-sm font-medium text-white hover:bg-clay-600"
         >
@@ -79,8 +88,21 @@ export default function SubmitTicket() {
         </label>
         <label className="block text-sm">
           <span className="text-ink-600">What's the problem?</span>
-          <textarea required rows={6} value={form.message} onChange={set('message')} className={`mt-1 ${field}`} />
+          <textarea
+            required
+            rows={6}
+            value={form.message}
+            onChange={(e) => {
+              setUsedVoice(false);
+              set('message')(e);
+            }}
+            className={`mt-1 ${field}`}
+          />
         </label>
+        <div>
+          <p className="mb-1.5 text-xs text-ink-500">Or describe it by voice — we'll transcribe it into the box above:</p>
+          <VoiceNote onTranscript={onTranscript} />
+        </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"

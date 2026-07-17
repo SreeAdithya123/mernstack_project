@@ -13,7 +13,9 @@ async function invoke(fn, body) {
 export const tickets = {
   // Creates the ticket + its opening message, then triggers classification.
   // Mirrors the old Express flow's single "submit -> triage" round trip.
-  async create({ customerId, subject, message }) {
+  // Language detection/translation happens automatically server-side (DB
+  // trigger -> translate-message), not here.
+  async create({ customerId, subject, message, isVoiceTranscript = false }) {
     const { data: ticket, error: ticketErr } = await supabase
       .from('tickets')
       .insert({ customer_id: customerId, subject })
@@ -23,7 +25,7 @@ export const tickets = {
 
     const { error: messageErr } = await supabase
       .from('ticket_messages')
-      .insert({ ticket_id: ticket.id, sender_id: customerId, body: message });
+      .insert({ ticket_id: ticket.id, sender_id: customerId, body: message, is_voice_transcript: isVoiceTranscript });
     if (messageErr) throw messageErr;
 
     let classificationError = null;
@@ -81,6 +83,7 @@ export const tickets = {
   similar: (ticketId) => invoke('similar-tickets', { ticket_id: ticketId }),
   draft: (ticketId) => invoke('draft-reply', { ticket_id: ticketId }),
   summarize: (ticketId) => invoke('summarize-ticket', { ticket_id: ticketId }),
+  transcribeVoice: (audioBase64, mimeType) => invoke('transcribe-voice-note', { audio_base64: audioBase64, mime_type: mimeType }),
 };
 
 function unwrap({ data, error }) {

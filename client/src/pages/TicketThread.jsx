@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { tickets } from '../lib/tickets.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { SentimentChip, PriorityChip, CategoryChip, StatusBadge } from '../components/Chips.jsx';
+import { SentimentChip, PriorityChip, CategoryChip, StatusBadge, LanguageChip, AutoClosedBadge } from '../components/Chips.jsx';
 
 const timeAgo = (iso) => {
   const mins = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -32,7 +32,10 @@ export default function TicketThread() {
       (err) => !cancelled && setError(err.message)
     );
 
-    // Realtime: new agent replies show up without a manual refresh.
+    // Realtime: new agent replies show up without a manual refresh. Also
+    // listen for UPDATE - translation (body_translated) and an auto-close
+    // both land as an update shortly after the triggering insert, not as
+    // part of it.
     const channel = supabase
       .channel(`ticket-messages-${id}`)
       .on(
@@ -42,6 +45,18 @@ export default function TicketThread() {
           if (payload.new.internal_only) return;
           setMessages((prev) => (prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]));
         }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ticket_messages', filter: `ticket_id=eq.${id}` },
+        (payload) => {
+          setMessages((prev) => prev.map((m) => (m.id === payload.new.id ? payload.new : m)));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'tickets', filter: `id=eq.${id}` },
+        (payload) => setTicket(payload.new)
       )
       .subscribe();
 
@@ -78,6 +93,8 @@ export default function TicketThread() {
           <PriorityChip value={ticket.priority} />
           <SentimentChip value={ticket.sentiment} />
           <CategoryChip value={ticket.category} />
+          <LanguageChip value={ticket.detected_language} />
+          <AutoClosedBadge show={ticket.auto_closed_by_ai} />
         </div>
         {ticket.resolution_summary && (
           <p className="mt-2 rounded-lg bg-clay-50 p-2 text-xs text-clay-700">
@@ -87,20 +104,25 @@ export default function TicketThread() {
       </header>
 
       <div className="max-h-[50vh] space-y-3 overflow-y-auto p-4">
-        {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line ${
-                m.sender_id === user.id ? 'bg-clay-500 text-white' : 'bg-cream-200 text-ink-800'
-              }`}
-            >
-              <p className="mb-1 text-[11px] opacity-70">
-                {m.sender_id === user.id ? 'You' : 'Support agent'} · {timeAgo(m.created_at)}
-              </p>
-              {m.body}
+        {messages.map((m) => {
+          const isMe = m.sender_id === user.id;
+          const displayBody = !isMe && m.body_translated ? m.body_translated : m.body;
+          return (
+            <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-line ${
+                  isMe ? 'bg-clay-500 text-white' : 'bg-cream-200 text-ink-800'
+                }`}
+              >
+                <p className="mb-1 text-[11px] opacity-70">
+                  {isMe ? 'You' : 'Support agent'} · {timeAgo(m.created_at)}
+                  {m.is_voice_transcript ? ' · 🎤 voice' : ''}
+                </p>
+                {displayBody}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {messages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
       </div>
 

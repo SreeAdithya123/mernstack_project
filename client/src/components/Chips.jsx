@@ -52,3 +52,14 @@ export function RoleBadge({ value }) {
   };
   return <span className={`${chip} ${styles[value] ?? ''}`}>{label(value)}</span>;
 }
+
+// Only renders for non-English tickets - an English ticket needs no badge.
+export function LanguageChip({ value }) {
+  if (!value || value === 'en') return null;
+  return <span className={`${chip} border border-ink-300 uppercase text-ink-600`}>{value}</span>;
+}
+
+export function AutoClosedBadge({ show }) {
+  if (!show) return null;
+  return <span className={`${chip} bg-purple-100 text-purple-800`}>Auto-closed by AI</span>;
+}
