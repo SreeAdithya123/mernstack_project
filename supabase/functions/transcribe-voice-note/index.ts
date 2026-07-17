@@ -1,16 +1,10 @@
 // Client-invoked, synchronous (the user is actively waiting to review the
-// transcript before submitting). Uses a multimodal Gemini model - the
-// text-chat GEMINI_MODEL default (gemma-4-31b-it) is text-only and can't do
-// this. No OpenRouter fallback: OpenRouter's free-tier text models don't take
-// audio input either, and this is a synchronous user-facing call where a long
-// fallback chain would just mean a longer wait before failing - better to
-// fail fast and let the user type instead.
-//
-// Model choice verified live against this project's key (2026-07-17):
-// gemini-2.0-flash / gemini-2.0-flash-lite returned 429 (quota exhausted on
-// this key specifically), gemini-2.5-flash / gemini-2.5-flash-lite returned
-// 404 ("no longer available to new users"). gemini-flash-latest works and
-// transcribed a test clip correctly.
+// transcript before submitting). Uses ElevenLabs Speech-to-Text (scribe_v1) -
+// verified live against this project's key (2026-07-18): a synthesized test
+// clip (Windows System.Speech.Synthesis) transcribed with an exact
+// word-for-word match. Client contract (audio_base64/mime_type in,
+// {transcript} out) is unchanged from the prior Gemini-based version, so no
+// frontend changes were needed to switch providers.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -18,7 +12,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const TRANSCRIBE_MODEL = Deno.env.get('GEMINI_TRANSCRIBE_MODEL') || 'gemini-flash-latest';
+const EXT_BY_MIME: Record<string, string> = {
+  'audio/webm': 'webm',
+  'audio/mp4': 'mp4',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/ogg': 'ogg',
+};
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -38,30 +46,24 @@ Deno.serve(async (req) => {
     // no business being longer than a minute or two of compressed audio.
     if (audio_base64.length > 8_000_000) throw new Error('audio too large - please keep voice notes under ~1 minute');
 
-    const key = Deno.env.get('GEMINI_API_KEY');
-    if (!key) throw new Error('GEMINI_API_KEY not set');
+    const key = Deno.env.get('ELEVENLABS_API_KEY');
+    if (!key) throw new Error('ELEVENLABS_API_KEY not set');
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${TRANSCRIBE_MODEL}:generateContent`, {
+    const bytes = base64ToBytes(audio_base64);
+    const ext = EXT_BY_MIME[mime_type.split(';')[0]] ?? 'webm';
+    const form = new FormData();
+    form.append('model_id', 'scribe_v1');
+    form.append('file', new Blob([bytes], { type: mime_type }), `voice-note.${ext}`);
+
+    const res = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
-      headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: 'Transcribe this audio verbatim. Respond with ONLY the transcript text - no commentary, no markdown, no quotation marks around it.' },
-              { inlineData: { mimeType: mime_type, data: audio_base64 } },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0 },
-      }),
+      headers: { 'xi-api-key': key },
+      body: form,
     });
     const raw = await res.text();
     if (!res.ok) throw new Error(`transcription failed: ${res.status} ${raw.slice(0, 300)}`);
 
-    const parts = JSON.parse(raw).candidates?.[0]?.content?.parts;
-    const transcript = (parts ?? []).map((p: { text?: string }) => p.text ?? '').join('').trim();
+    const transcript = String(JSON.parse(raw).text ?? '').trim();
     if (!transcript) throw new Error('transcription returned no text - the audio may be silent or unclear');
 
     return new Response(JSON.stringify({ transcript }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

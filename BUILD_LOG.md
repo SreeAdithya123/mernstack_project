@@ -371,3 +371,15 @@ available tools, and live microphone recording isn't meaningfully testable headl
 instead by testing the deployed transcription function directly with real audio (above) and
 confirming the component renders correctly with no console errors. Worth a manual check by the
 user with a real microphone.
+
+**2026-07-18 — swapped voice transcription to ElevenLabs Speech-to-Text (`scribe_v1`)**, per user
+request, replacing the Gemini `gemini-flash-latest` approach above. Tested the raw ElevenLabs API
+directly first (multipart `file` + `model_id=scribe_v1`, header `xi-api-key`) against the same
+synthesized test clip before touching the function — exact transcript match, plus per-word
+timestamps and language detection in the response (unused, but available if ever needed). Rewrote
+`transcribe-voice-note` to decode the incoming base64 to bytes and POST as `multipart/form-data`
+instead of Gemini's inline-base64 JSON shape; the function's client-facing contract
+(`audio_base64`/`mime_type` in, `{transcript}` out) is unchanged, so `VoiceNote.jsx` needed no
+changes. Secret `ELEVENLABS_API_KEY` set via the Supabase CLI. Redeployed and re-verified end-to-end
+through the actual deployed function (not just the raw API) with the identical test request used
+for the Gemini version — same exact transcript.
